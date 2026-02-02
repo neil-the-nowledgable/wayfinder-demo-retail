@@ -1,0 +1,124 @@
+BPA Products v0.1.json 
+
+[
+  {
+    "id": "BPA-COAT-HIKING-W",
+    "name": "Women's Hiking Winter Coat",
+    "description": "High-performance insulation for trail comfort. Colors: Black, White, Pink. Sizes: S, M, L.",
+    "picture": "/static/img/products/coat-hiking-w.jpg",
+    "price_usd": { "currency_code": "USD", "units": 149, "nanos": 990000000 },
+    "categories": ["womens", "coats", "hiking"]
+  },
+  {
+    "id": "BPA-COAT-HIKING-M",
+    "name": "Men's Hiking Winter Coat",
+    "description": "High-performance insulation for trail comfort. Colors: Black, White, Pink. Sizes: S, M, L.",
+    "picture": "/static/img/products/coat-hiking-m.jpg",
+    "price_usd": { "currency_code": "USD", "units": 149, "nanos": 990000000 },
+    "categories": ["mens", "coats", "hiking"]
+  },
+  {
+    "id": "BPA-COAT-SKIING-W",
+    "name": "Women's Skiing Winter Coat",
+    "description": "Waterproof shell with thermal lining. Colors: Black, White, Pink. Sizes: S, M, L.",
+    "picture": "/static/img/products/coat-skiing-w.jpg",
+    "price_usd": { "currency_code": "USD", "units": 185, "nanos": 0 },
+    "categories": ["womens", "coats", "skiing"]
+  },
+  {
+    "id": "BPA-COAT-SKIING-M",
+    "name": "Men's Skiing Winter Coat",
+    "description": "Waterproof shell with thermal lining. Colors: Black, White, Pink. Sizes: S, M, L.",
+    "picture": "/static/img/products/coat-skiing-m.jpg",
+    "price_usd": { "currency_code": "USD", "units": 185, "nanos": 0 },
+    "categories": ["mens", "coats", "skiing"]
+  },
+  {
+    "id": "BPA-COAT-SKATING-W",
+    "name": "Women's Skating Winter Coat",
+    "description": "Lightweight, breathable jacket for active skating. Colors: Black, White, Pink. Sizes: S, M, L.",
+    "picture": "/static/img/products/coat-skating-w.jpg",
+    "price_usd": { "currency_code": "USD", "units": 99, "nanos": 990000000 },
+    "categories": ["womens", "coats", "skating"]
+  },
+  {
+    "id": "BPA-COAT-SKATING-M",
+    "name": "Men's Skating Winter Coat",
+    "description": "Lightweight, breathable jacket for active skating. Colors: Black, White, Pink. Sizes: S, M, L.",
+    "picture": "/static/img/products/coat-skating-m.jpg",
+    "price_usd": { "currency_code": "USD", "units": 99, "nanos": 990000000 },
+    "categories": ["mens", "coats", "skating"]
+  },
+  {
+    "id": "BPA-SHIRT-WAYFINDER-W",
+    "name": "Wayfinder Shirt (Women)",
+    "description": "Features a classic woods scene. Colors: Black, White, Pink. Sizes: S, M, L.",
+    "picture": "/static/img/products/shirt-wayfinder-w.jpg",
+    "price_usd": { "currency_code": "USD", "units": 35, "nanos": 0 },
+    "categories": ["womens", "shirts", "apparel"]
+  },
+  {
+    "id": "BPA-SHIRT-WAYFINDER-M",
+    "name": "Wayfinder Shirt (Men)",
+    "description": "Features a classic woods scene. Colors: Black, White, Pink. Sizes: S, M, L.",
+    "picture": "/static/img/products/shirt-wayfinder-m.jpg",
+    "price_usd": { "currency_code": "USD", "units": 38, "nanos": 500000000 },
+    "categories": ["mens", "shirts", "apparel"]
+  },
+  {
+    "id": "BPA-SHIRT-WINDJAMMER-W",
+    "name": "Windjammer Shirt (Women)",
+    "description": "Features a serene lake scene. Colors: Black, White, Pink. Sizes: S, M, L.",
+    "picture": "/static/img/products/shirt-windjammer-w.jpg",
+    "price_usd": { "currency_code": "USD", "units": 35, "nanos": 0 },
+    "categories": ["womens", "shirts", "apparel"]
+  },
+  {
+    "id": "BPA-SHIRT-WINDJAMMER-M",
+    "name": "Windjammer Shirt (Men)",
+    "description": "Features a serene lake scene. Colors: Black, White, Pink. Sizes: S, M, L.",
+    "picture": "/static/img/products/shirt-windjammer-m.jpg",
+    "price_usd": { "currency_code": "USD", "units": 38, "nanos": 500000000 },
+    "categories": ["mens", "shirts", "apparel"]
+  },
+  {
+    "id": "BPA-FW-HIKER-BOOT-W",
+    "name": "Women's Hiker Boots",
+    "description": "Durable outdoor boots. Colors: Brown, Black, White. Sizes: 1-10.",
+    "picture": "/static/img/products/boot-hiker-w.jpg",
+    "price_usd": { "currency_code": "USD", "units": 110, "nanos": 0 },
+    "categories": ["womens", "footwear", "boots"]
+  },
+  {
+    "id": "BPA-FW-HIKER-BOOT-M",
+    "name": "Men's Hiker Boots",
+    "description": "Durable outdoor boots. Colors: Brown, Black, White. Sizes: 1-10.",
+    "picture": "/static/img/products/boot-hiker-m.jpg",
+    "price_usd": { "currency_code": "USD", "units": 115, "nanos": 0 },
+    "categories": ["mens", "footwear", "boots"]
+  },
+  {
+    "id": "BPA-FW-JIM-SHOE-W",
+    "name": "Women's Jim Shoes",
+    "description": "Versatile athletic footwear. Colors: Brown, Black, White. Sizes: 1-10.",
+    "picture": "/static/img/products/shoe-jim-w.jpg",
+    "price_usd": { "currency_code": "USD", "units": 89, "nanos": 950000000 },
+    "categories": ["womens", "footwear", "shoes"]
+  },
+  {
+    "id": "BPA-FW-JIM-SHOE-M",
+    "name": "Men's Jim Shoes",
+    "description": "Versatile athletic footwear. Colors: Brown, Black, White. Sizes: 1-10.",
+    "picture": "/static/img/products/shoe-jim-m.jpg",
+    "price_usd": { "currency_code": "USD", "units": 94, "nanos": 950000000 },
+    "categories": ["mens", "footwear", "shoes"]
+  },
+  {
+    "id": "BPA-GEAR-TSPIKE-01",
+    "name": "Aluminum Tent Spike (Single)",
+    "description": "Lightweight forged aluminum tent stake. Essential gear.",
+    "picture": "/static/img/products/tent-spike.jpg",
+    "price_usd": { "currency_code": "USD", "units": 2, "nanos": 500000000 },
+    "categories": ["gear", "camping", "sale"]
+  }
+]

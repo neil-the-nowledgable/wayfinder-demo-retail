@@ -1,0 +1,26 @@
+[
+  {
+    "id": "BPA-COAT-W-HIK-BLK-S",
+    "name": "Women's Hiking Coat (Black, Small)",
+    "description": "Winter hiking coat in Black. Women's Small measurements.",
+    "picture": "/static/img/products/coat-w-h-blk.jpg",
+    "price_usd": { "currency_code": "USD", "units": 129, "nanos": 990000000 },
+    "categories": ["womens", "coats"]
+  },
+  {
+    "id": "BPA-SHIRT-M-WAY-PNK-L",
+    "name": "Men's Wayfinder Shirt (Pink, Large)",
+    "description": "Wayfinder Woods Scene. Men's Large measurements.",
+    "picture": "/static/img/products/shirt-m-way-pnk.jpg",
+    "price_usd": { "currency_code": "USD", "units": 45, "nanos": 0 },
+    "categories": ["mens", "shirts", "sale"]
+  },
+  {
+    "id": "BPA-FOOT-W-BOOT-BRW-8",
+    "name": "Women's Hikers Boots (Brown, Size 8)",
+    "description": "Durable leather hiking boots. Color: Brown. Size: 8.",
+    "picture": "/static/img/products/boot-w-brw.jpg",
+    "price_usd": { "currency_code": "USD", "units": 110, "nanos": 0 },
+    "categories": ["womens", "footwear", "boutique"]
+  }
+]

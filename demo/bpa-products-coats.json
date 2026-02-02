@@ -1,0 +1,50 @@
+[
+  {
+    "id": "BPA-W-HK-COAT",
+    "name": "Women's Hiking Winter Coat",
+    "description": "High-performance insulation for trail comfort. Small/Medium/Large measurements tailored for women.",
+    "picture": "/static/img/products/women-hiking-coat.jpg",
+    "price_usd": { "currency_code": "USD", "units": 149, "nanos": 990000000 },
+    "categories": ["womens", "hiking", "winter-coats"]
+  },
+  {
+    "id": "BPA-M-SK-COAT",
+    "name": "Men's Skiing Winter Coat",
+    "description": "Waterproof shell with thermal lining. Small/Medium/Large measurements tailored for men.",
+    "picture": "/static/img/products/men-ski-coat.jpg",
+    "price_usd": { "currency_code": "USD", "units": 185, "nanos": 0 },
+    "categories": ["mens", "skiing", "winter-coats", "sale"]
+  },
+  {
+    "id": "BPA-W-SH-WAY",
+    "name": "Wayfinder Shirt (Women)",
+    "description": "Features a classic woods scene. Available in Black, White, and Pink.",
+    "picture": "/static/img/products/wayfinder-women.jpg",
+    "price_usd": { "currency_code": "USD", "units": 35, "nanos": 0 },
+    "categories": ["womens", "shirts", "apparel"]
+  },
+  {
+    "id": "BPA-M-SH-WIND",
+    "name": "Windjammer Shirt (Men)",
+    "description": "Features a serene lake scene. Available in Black, White, and Pink.",
+    "picture": "/static/img/products/windjammer-men.jpg",
+    "price_usd": { "currency_code": "USD", "units": 38, "nanos": 500000000 },
+    "categories": ["mens", "shirts", "apparel"]
+  },
+  {
+    "id": "BPA-K-BOOT-HK",
+    "name": "Kids' Hiker Boots",
+    "description": "Durable brown, black, or white boots for junior explorers. Sizes 1-10.",
+    "picture": "/static/img/products/kids-hikers.jpg",
+    "price_usd": { "currency_code": "USD", "units": 65, "nanos": 0 },
+    "categories": ["kids", "footwear", "boots"]
+  },
+  {
+    "id": "BPA-W-SHOE-JIM",
+    "name": "Women's Jim Shoes",
+    "description": "Versatile athletic footwear in brown, black, and white. Sizes 1-10.",
+    "picture": "/static/img/products/jim-shoes-women.jpg",
+    "price_usd": { "currency_code": "USD", "units": 89, "nanos": 950000000 },
+    "categories": ["womens", "footwear", "shoes", "boutique"]
+  }
+]
