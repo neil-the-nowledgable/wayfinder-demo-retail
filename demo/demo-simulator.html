@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wayfinder Business Observability — Demo Simulator</title>
+<style>
+  :root {
+    --bg-canvas: #111217;
+    --bg-panel: #181b1f;
+    --bg-panel-header: #1e2228;
+    --bg-sidebar: #111217;
+    --bg-input: #0e0f12;
+    --border: #2c3039;
+    --text-primary: #d0d5de;
+    --text-secondary: #8b919a;
+    --text-muted: #5f6672;
+    --accent-blue: #3274d9;
+    --accent-green: #56a64b;
+    --accent-orange: #f2994a;
+    --accent-red: #e02f44;
+    --accent-purple: #a352cc;
+    --accent-yellow: #f2cc0c;
+    --accent-teal: #3ab4a5;
+    --critical: #e02f44;
+    --high: #f2994a;
+    --medium: #f2cc0c;
+    --low: #56a64b;
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--font); background: var(--bg-canvas); color: var(--text-primary); overflow: hidden; height: 100vh; }
+
+  /* Top nav */
+  .topnav {
+    display: flex; align-items: center; height: 48px;
+    background: var(--bg-panel-header); border-bottom: 1px solid var(--border);
+    padding: 0 16px; gap: 12px; z-index: 100;
+  }
+  .topnav .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; color: var(--accent-blue); }
+  .topnav .logo svg { width: 22px; height: 22px; fill: var(--accent-orange); }
+  .topnav .breadcrumb { color: var(--text-secondary); font-size: 13px; flex: 1; }
+  .topnav .breadcrumb span { color: var(--text-primary); }
+  .topnav .time-range {
+    background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text-primary); font-size: 12px; padding: 4px 10px; cursor: default;
+  }
+
+  /* Layout */
+  .layout { display: flex; height: calc(100vh - 48px); }
+  .sidebar {
+    width: 260px; min-width: 260px; background: var(--bg-sidebar);
+    border-right: 1px solid var(--border); overflow-y: auto; padding: 12px 0;
+  }
+  .main { flex: 1; overflow-y: auto; padding: 16px 20px; }
+
+  /* Sidebar nav */
+  .sidebar h3 {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-muted); padding: 12px 16px 6px;
+  }
+  .sidebar .nav-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 16px; cursor: pointer; font-size: 13px;
+    color: var(--text-secondary); transition: all 0.15s;
+    border-left: 3px solid transparent;
+  }
+  .sidebar .nav-item:hover { color: var(--text-primary); background: rgba(255,255,255,0.03); }
+  .sidebar .nav-item.active {
+    color: var(--accent-blue); background: rgba(50,116,217,0.08);
+    border-left-color: var(--accent-blue);
+  }
+  .sidebar .nav-item .dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  }
+  .sidebar .nav-item .badge {
+    margin-left: auto; font-size: 10px; padding: 1px 6px;
+    border-radius: 8px; font-weight: 600;
+  }
+
+  /* Screen container */
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* Panel grid */
+  .panel-grid { display: grid; gap: 12px; }
+  .panel-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  .panel-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .panel-grid.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+
+  /* Panels */
+  .panel {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    border-radius: 4px; overflow: hidden;
+  }
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: var(--bg-panel-header);
+    border-bottom: 1px solid var(--border);
+    font-size: 13px; font-weight: 500;
+  }
+  .panel-header .panel-tag {
+    font-size: 10px; padding: 2px 6px; border-radius: 3px;
+    background: rgba(50,116,217,0.15); color: var(--accent-blue);
+  }
+  .panel-body { padding: 12px; }
+
+  /* Stat cards */
+  .stat-row { display: flex; gap: 12px; margin-bottom: 12px; }
+  .stat-card {
+    flex: 1; background: var(--bg-panel); border: 1px solid var(--border);
+    border-radius: 4px; padding: 14px 16px; text-align: center;
+  }
+  .stat-card .stat-value { font-size: 28px; font-weight: 700; line-height: 1.1; }
+  .stat-card .stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th {
+    text-align: left; padding: 8px 10px; font-weight: 600;
+    color: var(--text-secondary); border-bottom: 1px solid var(--border);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  td { padding: 7px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* Tags & badges */
+  .tag {
+    display: inline-block; font-size: 10px; font-weight: 600;
+    padding: 2px 7px; border-radius: 3px;
+  }
+  .tag-critical { background: rgba(224,47,68,0.15); color: var(--critical); }
+  .tag-high { background: rgba(242,153,74,0.15); color: var(--high); }
+  .tag-medium { background: rgba(242,204,12,0.15); color: var(--medium); }
+  .tag-low { background: rgba(86,166,75,0.15); color: var(--low); }
+  .tag-done { background: rgba(86,166,75,0.15); color: var(--accent-green); }
+  .tag-in-progress { background: rgba(50,116,217,0.15); color: var(--accent-blue); }
+  .tag-todo { background: rgba(139,145,154,0.15); color: var(--text-secondary); }
+  .tag-blocked { background: rgba(224,47,68,0.15); color: var(--critical); }
+  .tag-review { background: rgba(163,82,204,0.15); color: var(--accent-purple); }
+  .tag-beta { background: rgba(163,82,204,0.15); color: var(--accent-purple); }
+  .tag-stable { background: rgba(86,166,75,0.15); color: var(--accent-green); }
+
+  /* Progress bars */
+  .progress-bar { height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+
+  /* Health dots */
+  .health-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; vertical-align: middle; }
+
+  /* Query box */
+  .query-box {
+    background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px;
+    padding: 10px 14px; font-family: var(--font-mono); font-size: 12px;
+    color: var(--accent-teal); margin-bottom: 12px; line-height: 1.5;
+    position: relative;
+  }
+  .query-box .query-label {
+    position: absolute; top: -8px; left: 10px; background: var(--bg-panel);
+    padding: 0 6px; font-size: 10px; color: var(--text-muted);
+    font-family: var(--font); text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .query-box .kw { color: var(--accent-purple); }
+  .query-box .str { color: var(--accent-green); }
+  .query-box .op { color: var(--accent-orange); }
+  .query-box .fn { color: var(--accent-blue); }
+
+  /* Span detail */
+  .span-detail { font-size: 12px; }
+  .span-detail .attr-row {
+    display: flex; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .span-detail .attr-key { color: var(--accent-purple); width: 220px; flex-shrink: 0; font-family: var(--font-mono); }
+  .span-detail .attr-val { color: var(--text-primary); font-family: var(--font-mono); }
+
+  /* Timeline */
+  .timeline { position: relative; padding-left: 24px; margin: 8px 0; }
+  .timeline::before {
+    content: ''; position: absolute; left: 7px; top: 4px; bottom: 4px;
+    width: 2px; background: var(--border);
+  }
+  .timeline .event {
+    position: relative; padding: 6px 0; font-size: 12px;
+  }
+  .timeline .event::before {
+    content: ''; position: absolute; left: -21px; top: 10px;
+    width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent-blue);
+    background: var(--bg-panel);
+  }
+  .timeline .event.green::before { border-color: var(--accent-green); }
+  .timeline .event.orange::before { border-color: var(--accent-orange); }
+  .timeline .event.red::before { border-color: var(--critical); }
+  .timeline .event .event-time { color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+  .timeline .event .event-text { color: var(--text-primary); margin-top: 2px; }
+
+  /* Chart placeholder */
+  .chart-area { position: relative; height: 180px; overflow: hidden; }
+  .chart-area canvas { width: 100% !important; height: 100% !important; }
+
+  /* Ecosystem diagram */
+  .eco-node {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; margin: 4px 0; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg-panel-header);
+    font-size: 13px; cursor: default; transition: border-color 0.2s;
+  }
+  .eco-node:hover { border-color: var(--accent-blue); }
+  .eco-node .eco-icon { font-size: 20px; width: 32px; text-align: center; }
+  .eco-node .eco-label { font-weight: 600; }
+  .eco-node .eco-desc { font-size: 11px; color: var(--text-secondary); }
+  .eco-connector { width: 2px; height: 16px; background: var(--border); margin-left: 26px; }
+
+  /* Alert comparison */
+  .alert-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .alert-box { padding: 12px; border-radius: 6px; font-size: 12px; font-family: var(--font-mono); line-height: 1.6; }
+  .alert-before { background: rgba(224,47,68,0.06); border: 1px solid rgba(224,47,68,0.2); }
+  .alert-after { background: rgba(86,166,75,0.06); border: 1px solid rgba(86,166,75,0.2); }
+  .alert-box .alert-title { font-family: var(--font); font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+
+  /* Persona header */
+  .persona-header {
+    padding: 16px 20px; margin: -16px -20px 16px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, rgba(50,116,217,0.06), rgba(163,82,204,0.06));
+  }
+  .persona-header h1 { font-size: 20px; font-weight: 700; }
+  .persona-header .persona-pitch { color: var(--text-secondary); font-size: 14px; margin-top: 4px; }
+  .persona-header .persona-pain {
+    margin-top: 8px; font-size: 12px; color: var(--accent-orange); font-weight: 600;
+  }
+
+  /* Section heading */
+  .section-heading {
+    font-size: 14px; font-weight: 600; color: var(--text-primary);
+    margin: 20px 0 10px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-heading .minute-badge {
+    font-size: 10px; padding: 2px 8px; border-radius: 10px;
+    background: rgba(50,116,217,0.15); color: var(--accent-blue);
+    margin-left: 8px; font-weight: 600;
+  }
+
+  /* Talking point callout */
+  .talking-point {
+    background: rgba(50,116,217,0.05); border-left: 3px solid var(--accent-blue);
+    padding: 10px 14px; margin: 10px 0; font-size: 13px; font-style: italic;
+    color: var(--text-secondary); line-height: 1.5; border-radius: 0 4px 4px 0;
+  }
+
+  /* Workload bar */
+  .workload-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 12px; }
+  .workload-name { width: 100px; color: var(--text-secondary); }
+  .workload-bar { flex: 1; height: 18px; background: rgba(255,255,255,0.04); border-radius: 3px; position: relative; overflow: hidden; }
+  .workload-fill { height: 100%; border-radius: 3px; display: flex; align-items: center; padding-left: 6px; font-size: 10px; font-weight: 600; }
+  .workload-count { width: 30px; text-align: right; font-weight: 600; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3d4350; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .sidebar { width: 200px; min-width: 200px; }
+    .panel-grid.cols-4 { grid-template-columns: 1fr 1fr; }
+    .alert-compare { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Top Navigation -->
+<div class="topnav">
+  <div class="logo">
+    <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    Wayfinder
+  </div>
+  <div class="breadcrumb">
+    <span id="breadcrumb-text">Business Observability</span> / Demo Simulator
+  </div>
+  <div class="time-range" id="time-range">Last 3 months</div>
+</div>
+
+<!-- Layout -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <div class="sidebar" id="sidebar">
+    <h3>Concept Demo</h3>
+    <div class="nav-item active" data-screen="paradigm">
+      <div class="dot" style="background:var(--accent-blue)"></div>
+      The Paradigm
+      <span class="badge" style="background:rgba(50,116,217,0.15);color:var(--accent-blue)">1 min</span>
+    </div>
+    <div class="nav-item" data-screen="tasks-as-spans">
+      <div class="dot" style="background:var(--accent-teal)"></div>
+      Tasks as Spans
+      <span class="badge" style="background:rgba(58,180,165,0.15);color:var(--accent-teal)">2 min</span>
+    </div>
+    <div class="nav-item" data-screen="dashboard-layer">
+      <div class="dot" style="background:var(--accent-green)"></div>
+      Dashboard Layer
+      <span class="badge" style="background:rgba(86,166,75,0.15);color:var(--accent-green)">3 min</span>
+    </div>
+    <div class="nav-item" data-screen="intelligence-layer">
+      <div class="dot" style="background:var(--accent-purple)"></div>
+      Intelligence Layer
+      <span class="badge" style="background:rgba(163,82,204,0.15);color:var(--accent-purple)">4 min</span>
+    </div>
+    <div class="nav-item" data-screen="ecosystem">
+      <div class="dot" style="background:var(--accent-orange)"></div>
+      The Ecosystem
+      <span class="badge" style="background:rgba(242,153,74,0.15);color:var(--accent-orange)">5 min</span>
+    </div>
+
+    <h3>Persona Deep-Dives</h3>
+    <div class="nav-item" data-screen="persona-dev">
+      <div class="dot" style="background:var(--accent-blue)"></div>
+      Developer
+      <span class="badge" style="background:rgba(50,116,217,0.15);color:var(--accent-blue)">$475K</span>
+    </div>
+    <div class="nav-item" data-screen="persona-pm">
+      <div class="dot" style="background:var(--accent-green)"></div>
+      Project Manager
+      <span class="badge" style="background:rgba(86,166,75,0.15);color:var(--accent-green)">$117K</span>
+    </div>
+    <div class="nav-item" data-screen="persona-leader">
+      <div class="dot" style="background:var(--accent-purple)"></div>
+      Eng Leader
+      <span class="badge" style="background:rgba(163,82,204,0.15);color:var(--accent-purple)">$258K</span>
+    </div>
+    <div class="nav-item" data-screen="persona-sre">
+      <div class="dot" style="background:var(--accent-orange)"></div>
+      Operator / SRE
+      <span class="badge" style="background:rgba(242,153,74,0.15);color:var(--accent-orange)">$247K</span>
+    </div>
+    <div class="nav-item" data-screen="persona-compliance">
+      <div class="dot" style="background:var(--accent-yellow)"></div>
+      Compliance
+      <span class="badge" style="background:rgba(242,204,12,0.15);color:var(--accent-yellow)">$206K</span>
+    </div>
+    <div class="nav-item" data-screen="persona-agent">
+      <div class="dot" style="background:var(--accent-teal)"></div>
+      AI Agent
+      <span class="badge" style="background:rgba(58,180,165,0.15);color:var(--accent-teal)">$205K</span>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main" id="main-content">
+
+    <!-- ================================================================== -->
+    <!-- SCREEN: The Paradigm -->
+    <!-- ================================================================== -->
+    <div class="screen active" id="screen-paradigm">
+      <div class="section-heading">The Paradigm <span class="minute-badge">Minute 1</span></div>
+      <div class="talking-point">
+        "Operational observability transformed how we run systems. Business observability does the same for how we BUILD systems. Tasks, decisions, status — as telemetry."
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="panel-header">Unified Telemetry Architecture</div>
+        <div class="panel-body" style="padding:20px 24px">
+          <div style="display:grid;grid-template-columns:1fr 60px 1fr;gap:0;align-items:start">
+            <!-- Operational side -->
+            <div>
+              <div style="font-weight:700;font-size:13px;color:var(--accent-orange);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.05em">Operational Telemetry</div>
+              <div class="eco-node" style="border-color:rgba(242,153,74,0.3)">
+                <div class="eco-icon">&#x1F4CA;</div>
+                <div><div class="eco-label">Prometheus</div><div class="eco-desc">Metrics (counters, gauges, histograms)</div></div>
+              </div>
+              <div class="eco-node" style="border-color:rgba(242,153,74,0.3)">
+                <div class="eco-icon">&#x1F50D;</div>
+                <div><div class="eco-label">Tempo</div><div class="eco-desc">Distributed traces (request spans)</div></div>
+              </div>
+              <div class="eco-node" style="border-color:rgba(242,153,74,0.3)">
+                <div class="eco-icon">&#x1F4DD;</div>
+                <div><div class="eco-label">Loki</div><div class="eco-desc">Structured logs (JSON, logfmt)</div></div>
+              </div>
+            </div>
+            <!-- Arrow -->
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding-top:40px">
+              <div style="font-size:24px;color:var(--text-muted)">+</div>
+            </div>
+            <!-- Business side -->
+            <div>
+              <div style="font-weight:700;font-size:13px;color:var(--accent-blue);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.05em">Business Telemetry</div>
+              <div class="eco-node" style="border-color:rgba(50,116,217,0.3)">
+                <div class="eco-icon">&#x2611;&#xFE0F;</div>
+                <div><div class="eco-label">Tasks</div><div class="eco-desc">OTel spans with lifecycle events</div></div>
+              </div>
+              <div class="eco-node" style="border-color:rgba(50,116,217,0.3)">
+                <div class="eco-icon">&#x1F4A1;</div>
+                <div><div class="eco-label">Insights</div><div class="eco-desc">Decisions, lessons, questions</div></div>
+              </div>
+              <div class="eco-node" style="border-color:rgba(50,116,217,0.3)">
+                <div class="eco-icon">&#x1F91D;</div>
+                <div><div class="eco-label">Handoffs</div><div class="eco-desc">Agent-to-agent collaboration</div></div>
+              </div>
+            </div>
+          </div>
+          <!-- Converge arrow -->
+          <div style="text-align:center;margin:20px 0 8px;font-size:20px;color:var(--text-muted)">&#x25BC;</div>
+          <div class="eco-node" style="border-color:var(--accent-green);justify-content:center;background:rgba(86,166,75,0.05)">
+            <div class="eco-icon">&#x1F4C8;</div>
+            <div><div class="eco-label" style="color:var(--accent-green)">Grafana</div><div class="eco-desc">Same infrastructure. Same queries. Same dashboards.</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- SCREEN: Tasks as Spans -->
+    <!-- ================================================================== -->
+    <div class="screen" id="screen-tasks-as-spans">
+      <div class="section-heading">Tasks as Spans <span class="minute-badge">Minute 2</span></div>
+      <div class="talking-point">
+        "A task is an OpenTelemetry span. Status isn't manually updated — it's derived from artifacts. You don't tell the system 'I started working.' It knows because you pushed a commit."
+      </div>
+      <div class="query-box" style="margin-top:14px">
+        <div class="query-label">TraceQL</div>
+        {<span class="kw">span</span>.task.id <span class="op">!=</span> <span class="str">""</span>} <span class="op">|</span> <span class="fn">select</span>(<span class="kw">span</span>.task.id, <span class="kw">span</span>.task.title, <span class="kw">span</span>.task.status) <span class="op">|</span> <span class="fn">limit</span>(<span class="str">5</span>)
+      </div>
+      <div class="panel-grid cols-2">
+        <!-- Span detail panel -->
+        <div class="panel">
+          <div class="panel-header">Span Detail — DEMO-LIVE-001 <span class="panel-tag">Tempo</span></div>
+          <div class="panel-body span-detail">
+            <div class="attr-row"><span class="attr-key">span.name</span><span class="attr-val">task:DEMO-LIVE-001</span></div>
+            <div class="attr-row"><span class="attr-key">task.id</span><span class="attr-val">DEMO-LIVE-001</span></div>
+            <div class="attr-row"><span class="attr-key">task.title</span><span class="attr-val">Live demo task created by Lead Contractor</span></div>
+            <div class="attr-row"><span class="attr-key">task.type</span><span class="attr-val">task</span></div>
+            <div class="attr-row"><span class="attr-key">task.status</span><span class="attr-val" style="color:var(--accent-green)">done</span></div>
+            <div class="attr-row"><span class="attr-key">task.status.source</span><span class="attr-val">artifact (PR merge)</span></div>
+            <div class="attr-row"><span class="attr-key">project.id</span><span class="attr-val">online-boutique</span></div>
+            <div class="attr-row"><span class="attr-key">sprint.id</span><span class="attr-val">demo-sprint-1</span></div>
+            <div class="attr-row"><span class="attr-key">service.name</span><span class="attr-val">checkoutservice</span></div>
+            <div class="attr-row"><span class="attr-key">duration</span><span class="attr-val" style="color:var(--accent-orange)">4d 6h 32m</span></div>
+            <div class="attr-row"><span class="attr-key">trace.id</span><span class="attr-val" style="color:var(--text-muted)">a8f4e2b1c3d5e6f7...</span></div>
+          </div>
+        </div>
+        <!-- Timeline panel -->
+        <div class="panel">
+          <div class="panel-header">Lifecycle Events <span class="panel-tag">Status Transitions</span></div>
+          <div class="panel-body">
+            <div class="timeline">
+              <div class="event">
+                <div class="event-time">2025-11-18T09:14:22Z</div>
+                <div class="event-text"><span class="tag tag-todo">todo</span> Task created</div>
+              </div>
+              <div class="event" style="--color:var(--accent-blue)">
+                <div class="event-time">2025-11-18T14:32:07Z</div>
+                <div class="event-text"><span class="tag tag-in-progress">in_progress</span> First commit detected (abc1234)</div>
+              </div>
+              <div class="event orange">
+                <div class="event-time">2025-11-20T11:05:43Z</div>
+                <div class="event-text"><span class="tag tag-review">review</span> PR #47 opened</div>
+              </div>
+              <div class="event red">
+                <div class="event-time">2025-11-21T08:22:15Z</div>
+                <div class="event-text"><span class="tag tag-blocked">blocked</span> CI failure — integration tests</div>
+              </div>
+              <div class="event">
+                <div class="event-time">2025-11-21T15:44:31Z</div>
+                <div class="event-text"><span class="tag tag-review">review</span> CI fixed, re-review requested</div>
+              </div>
+              <div class="event green">
+                <div class="event-time">2025-11-22T15:46:54Z</div>
+                <div class="event-text"><span class="tag tag-done">done</span> PR #47 merged to main</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- SCREEN: Dashboard Layer (Portfolio) -->
+    <!-- ================================================================== -->
+    <div class="screen" id="screen-dashboard-layer">
+      <div class="section-heading">The Dashboard Layer <span class="minute-badge">Minute 3</span></div>
+      <div class="talking-point">
+        "Because tasks are spans, we get dashboards for free. Same Grafana. Same TraceQL. No new tools."
+      </div>
+      <!-- Stats row -->
+      <div class="stat-row" style="margin-top:14px">
+        <div class="stat-card"><div class="stat-value" style="color:var(--accent-blue)">11</div><div class="stat-label">Services</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--accent-green)">247</div><div class="stat-label">Tasks Total</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--accent-orange)">18</div><div class="stat-label">In Progress</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--critical)">4</div><div class="stat-label">Blocked</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--accent-green)">186</div><div class="stat-label">Completed</div></div>
+      </div>
+      <!-- Portfolio table -->
+      <div class="panel">
+        <div class="panel-header">Project Portfolio Overview <span class="panel-tag">Portfolio</span></div>
+        <div class="panel-body" style="padding:0">
+          <table>
+            <thead>
+              <tr>
+                <th>Health</th><th>Service</th><th>Criticality</th>
+                <th>Epics</th><th>Stories</th><th>Tasks</th>
+                <th>Progress</th><th>Blockers</th>
+              </tr>
+            </thead>
+            <tbody id="portfolio-table"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- SCREEN: Intelligence Layer -->
+    <!-- ================================================================== -->
+    <div class="screen" id="screen-intelligence-layer">
+      <div class="section-heading">The Intelligence Layer <span class="minute-badge">Minute 4</span></div>
+      <div class="talking-point">
+        "Agents emit decisions as insight spans. Alerts arrive with business context. Intelligence is queryable telemetry, not tribal knowledge."
+      </div>
+      <div class="query-box" style="margin-top:14px">
+        <div class="query-label">TraceQL — Agent Insights</div>
+        {<span class="kw">span</span>.insight.type <span class="op">=</span> <span class="str">"decision"</span> <span class="op">&amp;&amp;</span> <span class="kw">span</span>.insight.confidence <span class="op">&gt;=</span> <span class="str">0.8</span>} <span class="op">|</span> <span class="fn">select</span>(<span class="kw">span</span>.insight.summary, <span class="kw">span</span>.insight.confidence)
+      </div>
+      <div class="panel-grid cols-2">
+        <!-- Insight results -->
+        <div class="panel">
+          <div class="panel-header">Agent Decisions <span class="panel-tag">Insights</span></div>
+          <div class="panel-body" style="padding:0">
+            <table>
+              <thead><tr><th>Confidence</th><th>Summary</th><th>Service</th><th>Evidence</th></tr></thead>
+              <tbody>
+                <tr><td><span style="color:var(--accent-green);font-weight:700">0.95</span></td><td>Use connection pooling for DB access</td><td>cartservice</td><td style="color:var(--accent-blue)">ADR-012</td></tr>
+                <tr><td><span style="color:var(--accent-green);font-weight:700">0.92</span></td><td>Implement retry with exponential backoff</td><td>paymentservice</td><td style="color:var(--accent-blue)">RFC-007</td></tr>
+                <tr><td><span style="color:var(--accent-green);font-weight:700">0.88</span></td><td>Cache currency rates with 5m TTL</td><td>currencyservice</td><td style="color:var(--accent-blue)">PERF-031</td></tr>
+                <tr><td><span style="color:var(--accent-green);font-weight:700">0.85</span></td><td>Route through API gateway, no direct DB</td><td>frontend</td><td style="color:var(--accent-blue)">SEC-019</td></tr>
+                <tr><td><span style="color:var(--accent-green);font-weight:700">0.82</span></td><td>Use structured logging for audit trail</td><td>checkoutservice</td><td style="color:var(--accent-blue)">OPS-044</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <!-- Enriched alert -->
+        <div class="panel">
+          <div class="panel-header">Enriched Alert — checkoutservice <span class="panel-tag">Fox / Waagosh</span></div>
+          <div class="panel-body">
+            <div class="alert-compare">
+              <div class="alert-box alert-before">
+                <div class="alert-title" style="color:var(--critical)">Before (Raw Alert)</div>
+                <div style="color:var(--text-muted)">alertname:</div> HighErrorRate<br>
+                <div style="color:var(--text-muted)">severity:</div> warning<br>
+                <div style="color:var(--text-muted)">service:</div> checkoutservice<br>
+                <div style="color:var(--text-muted);margin-top:12px;font-style:italic;font-family:var(--font)">Who owns this?<br>Is it critical?<br>What changed?<br>Where's the runbook?</div>
+              </div>
+              <div class="alert-box alert-after">
+                <div class="alert-title" style="color:var(--accent-green)">After (Fox Enriched)</div>
+                <div style="color:var(--text-muted)">alertname:</div> HighErrorRate<br>
+                <div style="color:var(--text-muted)">severity:</div> warning<br>
+                <div style="color:var(--text-muted)">service:</div> checkoutservice<br>
+                <div style="color:var(--text-muted)">criticality:</div> <span style="color:var(--critical);font-weight:700">critical</span><br>
+                <div style="color:var(--text-muted)">owner:</div> checkout-team<br>
+                <div style="color:var(--text-muted)">business_value:</div> revenue-primary<br>
+                <div style="color:var(--text-muted)">recent_tasks:</div> 3 in last 48h<br>
+                <div style="color:var(--text-muted)">runbook:</div> <span style="color:var(--accent-blue)">wiki/checkout-runbook</span><br>
+                <div style="color:var(--text-muted)">escalation:</div> oncall@company.com
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- SCREEN: Ecosystem -->
+    <!-- ================================================================== -->
+    <div class="screen" id="screen-ecosystem">
+      <div class="section-heading">The Wayfinder Ecosystem <span class="minute-badge">Minute 5</span></div>
+      <div class="talking-point">
+        "Everything emits OTel. Everything lands in Grafana. No silos. No tool-switching. One unified view of your entire software operation."
+      </div>
+      <div class="panel-grid cols-2" style="margin-top:14px">
+        <div class="panel">
+          <div class="panel-header">Ecosystem Packages</div>
+          <div class="panel-body">
+            <div class="eco-node" style="border-color:var(--accent-blue);background:rgba(50,116,217,0.08)">
+              <div class="eco-icon">&#x1F578;&#xFE0F;</div>
+              <div style="flex:1"><div class="eco-label" style="color:var(--accent-blue)">ContextCore (Spider)</div><div class="eco-desc">Core framework — tasks as OTel spans</div></div>
+              <span class="tag tag-stable">stable</span>
+            </div>
+            <div class="eco-connector"></div>
+            <div class="eco-node">
+              <div class="eco-icon">&#x1F407;</div>
+              <div style="flex:1"><div class="eco-label">Rabbit (Waabooz)</div><div class="eco-desc">Alert routing by business criticality</div></div>
+              <span class="tag tag-beta">beta</span>
+            </div>
+            <div class="eco-connector"></div>
+            <div class="eco-node">
+              <div class="eco-icon">&#x1F98A;</div>
+              <div style="flex:1"><div class="eco-label">Fox (Waagosh)</div><div class="eco-desc">Alert enrichment with project context</div></div>
+              <span class="tag tag-beta">beta</span>
+            </div>
+            <div class="eco-connector"></div>
+            <div class="eco-node">
+              <div class="eco-icon">&#x1F43A;</div>
+              <div style="flex:1"><div class="eco-label">Coyote (Wiisagi-ma'iingan)</div><div class="eco-desc">Multi-agent incident resolution</div></div>
+              <span class="tag tag-beta">beta</span>
+            </div>
+            <div class="eco-connector"></div>
+            <div class="eco-node">
+              <div class="eco-icon">&#x1F9AB;</div>
+              <div style="flex:1"><div class="eco-label">Beaver (StartD8)</div><div class="eco-desc">LLM cost tracking + workflow orchestration</div></div>
+              <span class="tag tag-beta">beta</span>
+            </div>
+            <div class="eco-connector"></div>
+            <div class="eco-node">
+              <div class="eco-icon">&#x1F43F;&#xFE0F;</div>
+              <div style="flex:1"><div class="eco-label">Squirrel (Ajidamoo)</div><div class="eco-desc">Skills persistence + knowledge emission</div></div>
+              <span class="tag tag-beta">beta</span>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">Data Flow</div>
+          <div class="panel-body" style="font-size:12px;line-height:2">
+            <div style="margin-bottom:12px;color:var(--text-secondary)">Every package emits OpenTelemetry data to the unified observability stack:</div>
+            <div class="attr-row" style="border:none;padding:3px 0"><span class="attr-key" style="width:180px">Spider (tasks)</span><span class="attr-val">&#x2192; Tempo spans + Loki logs</span></div>
+            <div class="attr-row" style="border:none;padding:3px 0"><span class="attr-key" style="width:180px">Rabbit (alerts)</span><span class="attr-val">&#x2192; Loki routing logs</span></div>
+            <div class="attr-row" style="border:none;padding:3px 0"><span class="attr-key" style="width:180px">Fox (enrichment)</span><span class="attr-val">&#x2192; Loki enrichment logs</span></div>
+            <div class="attr-row" style="border:none;padding:3px 0"><span class="attr-key" style="width:180px">Coyote (incidents)</span><span class="attr-val">&#x2192; Tempo investigation spans</span></div>
+            <div class="attr-row" style="border:none;padding:3px 0"><span class="attr-key" style="width:180px">Beaver (LLM costs)</span><span class="attr-val">&#x2192; Mimir metrics + Tempo spans</span></div>
+            <div class="attr-row" style="border:none;padding:3px 0"><span class="attr-key" style="width:180px">Squirrel (knowledge)</span><span class="attr-val">&#x2192; Tempo skill/lesson spans</span></div>
+            <div style="margin-top:20px;padding:12px;background:rgba(86,166,75,0.06);border:1px solid rgba(86,166,75,0.2);border-radius:6px;text-align:center">
+              <div style="font-weight:700;color:var(--accent-green);font-size:14px">All queryable in Grafana</div>
+              <div style="color:var(--text-secondary);margin-top:4px">TraceQL for spans &middot; LogQL for logs &middot; PromQL for metrics</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- PERSONA: Developer -->
+    <!-- ================================================================== -->
+    <div class="screen" id="screen-persona-dev">
+      <div class="persona-header">
+        <h1>Developer Deep-Dive</h1>
+        <div class="persona-pitch">Your code IS your status update.</div>
+        <div class="persona-pain">Pain addressed: $475K/yr — redundant status updates + AI context re-explanation</div>
+      </div>
+      <div class="section-heading">Commit &#x2192; Auto Status <span class="minute-badge">Min 1</span></div>
+      <div class="panel-grid cols-2">
+        <div class="panel">
+          <div class="panel-header">Traditional Workflow</div>
+          <div class="panel-body" style="font-size:13px;line-height:2.2">
+            <div>1. <code style="background:var(--bg-input);padding:2px 6px;border-radius:3px">git commit -m "Fix cart null check"</code></div>
+            <div>2. Open Jira &#x2192; update status &#x2192; add comment</div>
+            <div>3. Post in Slack #standup</div>
+            <div>4. Update wiki page</div>
+            <div style="color:var(--critical);font-weight:600;margin-top:8px">4 tools, ~8 minutes per status update</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">With Business Observability</div>
+          <div class="panel-body" style="font-size:13px;line-height:2.2">
+            <div>1. <code style="background:var(--bg-input);padding:2px 6px;border-radius:3px">git commit -m "DEMO-001: Fix cart null check"</code></div>
+            <div style="color:var(--accent-green);font-weight:600;margin-top:8px">1 tool, 0 extra minutes. Status derived automatically.</div>
+            <div style="margin-top:12px;color:var(--text-secondary)">
+              Task span updated: <span class="tag tag-in-progress">in_progress</span><br>
+              Source: <span style="color:var(--accent-teal)">artifact (git commit abc1234)</span><br>
+              Dashboard: reflects change in real-time
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-heading">AI Persistent Memory <span class="minute-badge">Min 2</span></div>
+      <div class="query-box">
+        <div class="query-label">TraceQL — Prior Decisions</div>
+        {<span class="kw">span</span>.insight.type <span class="op">=</span> <span class="str">"decision"</span> <span class="op">&amp;&amp;</span> <span class="kw">span</span>.insight.confidence <span class="op">&gt;=</span> <span class="str">0.8</span>} <span class="op">|</span> <span class="fn">select</span>(<span class="kw">span</span>.insight.summary, <span class="kw">span</span>.insight.confidence)
+      </div>
+      <div class="panel">
+        <div class="panel-header">Agent Decision History <span class="panel-tag">Persistent Memory</span></div>
+        <div class="panel-body" style="padding:0">
+          <table>
+            <thead><tr><th>Session</th><th>Confidence</th><th>Decision</th><th>Evidence</th></tr></thead>
+            <tbody>
+              <tr><td style="color:var(--text-muted)">Jan 28</td><td><span style="color:var(--accent-green);font-weight:700">0.95</span></td><td>Use connection pooling for cartservice DB</td><td style="color:var(--accent-blue)">ADR-012, benchmark results</td></tr>
+              <tr><td style="color:var(--text-muted)">Jan 26</td><td><span style="color:var(--accent-green);font-weight:700">0.92</span></td><td>Retry with exponential backoff for payment API</td><td style="color:var(--accent-blue)">RFC-007, error rate data</td></tr>
+              <tr><td style="color:var(--text-muted)">Jan 24</td><td><span style="color:var(--accent-green);font-weight:700">0.88</span></td><td>Structured logging over printf for audit compliance</td><td style="color:var(--accent-blue)">SEC-019, compliance req</td></tr>
+              <tr><td style="color:var(--text-muted)">Jan 22</td><td><span style="color:var(--accent-green);font-weight:700">0.85</span></td><td>Cache currency rates with 5m TTL</td><td style="color:var(--accent-blue)">PERF-031, latency p99</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- PERSONA: Project Manager -->
+    <!-- ================================================================== -->
+    <div class="screen" id="screen-persona-pm">
+      <div class="persona-header">
+        <h1>Project Manager Deep-Dive</h1>
+        <div class="persona-pitch">Your status report writes itself.</div>
+        <div class="persona-pain">Pain addressed: $117K/yr — weekly status compilation + chasing developers</div>
+      </div>
+      <div class="section-heading">Portfolio at a Glance <span class="minute-badge">Min 1</span></div>
+      <div class="stat-row">
+        <div class="stat-card"><div class="stat-value" style="color:var(--accent-green)">73%</div><div class="stat-label">Overall Progress</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--accent-blue)">18</div><div class="stat-label">Active Tasks</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--critical)">4</div><div class="stat-label">Blockers</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--accent-orange)">2</div><div class="stat-label">Stale (>7d)</div></div>
+      </div>
+
+      <div class="section-heading">Sprint Metrics — Live <span class="minute-badge">Min 3</span></div>
+      <div class="panel-grid cols-2">
+        <div class="panel">
+          <div class="panel-header">Velocity Trend <span class="panel-tag">Sprint</span></div>
+          <div class="panel-body">
+            <div class="chart-area"><canvas id="chart-velocity"></canvas></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">Burndown — Sprint 1 <span class="panel-tag">Sprint</span></div>
+          <div class="panel-body">
+            <div class="chart-area"><canvas id="chart-burndown"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-heading">Stale Task Detection <span class="minute-badge">Min 4</span></div>
+      <div class="panel">
+        <div class="panel-header">Tasks with No Activity >7 Days <span class="panel-tag">Alert</span></div>
+        <div class="panel-body" style="padding:0">
+          <table>
+            <thead><tr><th>Task</th><th>Service</th><th>Assignee</th><th>Last Activity</th><th>Days Stale</th></tr></thead>
+            <tbody>
+              <tr><td style="color:var(--accent-blue)">OB-FE-042</td><td>frontend</td><td>alice</td><td style="color:var(--text-muted)">Jan 21</td><td style="color:var(--critical);font-weight:700">13</td></tr>
+              <tr><td style="color:var(--accent-blue)">OB-AD-018</td><td>adservice</td><td>bob</td><td style="color:var(--text-muted)">Jan 25</td><td style="color:var(--accent-orange);font-weight:700">9</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- PERSONA: Engineering Leader -->
+    <!-- ================================================================== -->
+    <div class="screen" id="screen-persona-leader">
+      <div class="persona-header">
+        <h1>Engineering Leader Deep-Dive</h1>
+        <div class="persona-pitch">Portfolio decisions backed by real-time data.</div>
+        <div class="persona-pain">Pain addressed: $258K/yr — 5-tool portfolio assembly + audit disruption</div>
+      </div>
+      <div class="section-heading">Workload Distribution <span class="minute-badge">Min 2</span></div>
+      <div class="panel">
+        <div class="panel-header">Team Workload — Active Tasks per Engineer <span class="panel-tag">Workload</span></div>
+        <div class="panel-body" id="workload-chart"></div>
+      </div>
+
+      <div class="section-heading">Historical Query — Instant Answers <span class="minute-badge">Min 3</span></div>
+      <div class="query-box">
+        <div class="query-label">TraceQL — October Activity</div>
+        {<span class="kw">span</span>.task.status <span class="op">=</span> <span class="str">"in_progress"</span>} <span class="op">|</span> <span class="fn">select</span>(<span class="kw">span</span>.task.id, <span class="kw">span</span>.task.title, <span class="kw">span</span>.task.service) <span class="op">|</span> <span class="fn">timerange</span>(<span class="str">2025-10-01</span>, <span class="str">2025-10-31</span>)
+      </div>
+      <div class="panel">
+        <div class="panel-header">Results — What was in progress during October <span class="panel-tag">Historical</span></div>
+        <div class="panel-body" style="padding:0">
+          <table>
+            <thead><tr><th>Task ID</th><th>Title</th><th>Service</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td style="color:var(--accent-blue)">OB-FE-031</td><td>Implement product search autocomplete</td><td>frontend</td><td><span class="tag tag-done">done</span></td></tr>
+              <tr><td style="color:var(--accent-blue)">OB-CS-014</td><td>Add cart persistence across sessions</td><td>cartservice</td><td><span class="tag tag-done">done</span></td></tr>
+              <tr><td style="color:var(--accent-blue)">OB-PS-008</td><td>Payment retry logic implementation</td><td>paymentservice</td><td><span class="tag tag-done">done</span></td></tr>
+              <tr><td style="color:var(--accent-blue)">OB-SS-019</td><td>Shipping rate calculator optimization</td><td>shippingservice</td><td><span class="tag tag-blocked">blocked</span></td></tr>
+              <tr><td style="color:var(--accent-blue)">OB-RS-007</td><td>ML model update for recommendations</td><td>recommendationservice</td><td><span class="tag tag-in-progress">in_progress</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section-heading">Gap Prioritization <span class="minute-badge">Min 4</span></div>
+      <div class="panel">
+        <div class="panel-header">Services Ranked by Blocker Count + Criticality <span class="panel-tag">ROI Signal</span></div>
+        <div class="panel-body" style="padding:0">
+          <table>
+            <thead><tr><th>Service</th><th>Criticality</th><th>Blockers</th><th>Avg Cycle Time</th><th>Priority Signal</th></tr></thead>
+            <tbody>
+              <tr><td>checkoutservice</td><td><span class="tag tag-critical">critical</span></td><td style="color:var(--critical);font-weight:700">2</td><td>6.2d</td><td style="font-weight:700;color:var(--critical)">Immediate</td></tr>
+              <tr><td>paymentservice</td><td><span class="tag tag-critical">critical</span></td><td style="color:var(--critical);font-weight:700">1</td><td>5.8d</td><td style="font-weight:700;color:var(--critical)">Immediate</td></tr>
+              <tr><td>frontend</td><td><span class="tag tag-critical">critical</span></td><td style="color:var(--accent-orange);font-weight:700">1</td><td>4.1d</td><td style="font-weight:700;color:var(--accent-orange)">High</td></tr>
+              <tr><td>shippingservice</td><td><span class="tag tag-high">high</span></td><td>0</td><td>7.4d</td><td style="color:var(--accent-orange)">Medium (slow)</td></tr>
+              <tr><td>adservice</td><td><span class="tag tag-medium">medium</span></td><td>0</td><td>2.1d</td><td style="color:var(--accent-green)">On track</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- PERSONA: SRE -->
+    <!-- ================================================================== -->
+    <div class="screen" id="screen-persona-sre">
+      <div class="persona-header">
+        <h1>Operator / SRE Deep-Dive</h1>
+        <div class="persona-pitch">Every alert arrives with context.</div>
+        <div class="persona-pain">Pain addressed: $247K/yr — incidents without context (15-min MTTA delay)</div>
+      </div>
+      <div class="section-heading">ProjectContext CRD <span class="minute-badge">Min 1</span></div>
+      <div class="panel">
+        <div class="panel-header">checkoutservice.yaml <span class="panel-tag">K8s CRD</span></div>
+        <div class="panel-body" style="font-family:var(--font-mono);font-size:12px;line-height:1.8;color:var(--text-secondary)">
+          <span style="color:var(--accent-purple)">apiVersion:</span> contextcore.io/v1alpha1<br>
+          <span style="color:var(--accent-purple)">kind:</span> ProjectContext<br>
+          <span style="color:var(--accent-purple)">metadata:</span><br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">name:</span> checkoutservice<br>
+          <span style="color:var(--accent-purple)">spec:</span><br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">criticality:</span> <span style="color:var(--critical);font-weight:700">critical</span><br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">businessValue:</span> <span style="color:var(--accent-orange)">revenue-primary</span><br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">owner:</span> checkout-team<br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">escalationContacts:</span><br>
+          &nbsp;&nbsp;&nbsp;&nbsp;- <span style="color:var(--accent-blue)">oncall@company.com</span><br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">runbookUrl:</span> <span style="color:var(--accent-blue)">wiki/checkout-runbook</span>
+        </div>
+      </div>
+
+      <div class="section-heading">Alert Enrichment — Before vs After <span class="minute-badge">Min 2</span></div>
+      <div class="panel">
+        <div class="panel-header">Fox (Waagosh) Alert Enrichment <span class="panel-tag">Fox</span></div>
+        <div class="panel-body">
+          <div class="alert-compare">
+            <div class="alert-box alert-before">
+              <div class="alert-title" style="color:var(--critical)">Raw Alert @ 2:14 AM</div>
+              <div style="color:var(--text-muted)">alertname:</div> HighErrorRate<br>
+              <div style="color:var(--text-muted)">severity:</div> warning<br>
+              <div style="color:var(--text-muted)">service:</div> checkoutservice<br>
+              <div style="color:var(--text-muted)">value:</div> 12.4% error rate<br>
+              <br>
+              <div style="color:var(--critical);font-style:italic;font-family:var(--font);font-size:11px;line-height:1.6">
+                "Who owns this?"<br>
+                "Is it business-critical?"<br>
+                "What changed recently?"<br>
+                "Where's the runbook?"<br>
+                &#x23F1; 15 min to find context
+              </div>
+            </div>
+            <div class="alert-box alert-after">
+              <div class="alert-title" style="color:var(--accent-green)">Enriched Alert @ 2:14 AM</div>
+              <div style="color:var(--text-muted)">alertname:</div> HighErrorRate<br>
+              <div style="color:var(--text-muted)">severity:</div> warning<br>
+              <div style="color:var(--text-muted)">service:</div> checkoutservice<br>
+              <div style="color:var(--text-muted)">criticality:</div> <span style="color:var(--critical);font-weight:700">CRITICAL</span><br>
+              <div style="color:var(--text-muted)">owner:</div> checkout-team<br>
+              <div style="color:var(--text-muted)">business_value:</div> revenue-primary<br>
+              <div style="color:var(--text-muted)">recent_tasks:</div><br>
+              &nbsp;&nbsp;<span style="color:var(--accent-blue)">OB-CO-031</span> Payment retry (merged 6h ago)<br>
+              &nbsp;&nbsp;<span style="color:var(--accent-blue)">OB-CO-028</span> Cart validation (in progress)<br>
+              <div style="color:var(--text-muted)">runbook:</div> <span style="color:var(--accent-blue)">wiki/checkout-runbook</span><br>
+              <div style="color:var(--text-muted)">escalation:</div> oncall@company.com<br>
+              <br>
+              <div style="color:var(--accent-green);font-family:var(--font);font-size:11px">
+                &#x23F1; 0 sec to find context. Route: PAGE.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-heading">Priority Routing <span class="minute-badge">Min 3</span></div>
+      <div class="panel">
+        <div class="panel-header">Rabbit (Waabooz) Routing Rules <span class="panel-tag">Rabbit</span></div>
+        <div class="panel-body" style="padding:0">
+          <table>
+            <thead><tr><th>Service</th><th>Criticality</th><th>Business Value</th><th>Route</th></tr></thead>
+            <tbody>
+              <tr><td>checkoutservice</td><td><span class="tag tag-critical">critical</span></td><td>revenue-primary</td><td style="color:var(--critical);font-weight:700">PAGE immediately</td></tr>
+              <tr><td>paymentservice</td><td><span class="tag tag-critical">critical</span></td><td>revenue-primary</td><td style="color:var(--critical);font-weight:700">PAGE immediately</td></tr>
+              <tr><td>frontend</td><td><span class="tag tag-critical">critical</span></td><td>revenue-primary</td><td style="color:var(--critical);font-weight:700">PAGE immediately</td></tr>
+              <tr><td>cartservice</td><td><span class="tag tag-high">high</span></td><td>revenue-secondary</td><td style="color:var(--accent-orange)">Slack + queue</td></tr>
+              <tr><td>currencyservice</td><td><span class="tag tag-medium">medium</span></td><td>enabler</td><td style="color:var(--text-secondary)">Queue for business hours</td></tr>
+              <tr><td>loadgenerator</td><td><span class="tag tag-low">low</span></td><td>internal testing</td><td style="color:var(--text-muted)">Log only</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- PERSONA: Compliance -->
+    <!-- ================================================================== -->
+    <div class="screen" id="screen-persona-compliance">
+      <div class="persona-header">
+        <h1>Compliance Officer Deep-Dive</h1>
+        <div class="persona-pitch">Audit-ready by design.</div>
+        <div class="persona-pain">Pain addressed: $206K/yr — officer labor + team disruption during audits</div>
+      </div>
+      <div class="section-heading">Structured Audit Trail <span class="minute-badge">Min 1</span></div>
+      <div class="query-box">
+        <div class="query-label">LogQL — Payment Service Lifecycle</div>
+        {<span class="kw">project</span><span class="op">=</span><span class="str">"online-boutique"</span>} <span class="op">|=</span> <span class="str">"paymentservice"</span> <span class="op">|</span> <span class="kw">json</span> <span class="op">|</span> <span class="fn">line_format</span> <span class="str">"{{.timestamp}} | {{.task_id}} | {{.status}} | {{.actor}}"</span>
+      </div>
+      <div class="panel">
+        <div class="panel-header">Task Lifecycle — Immutable Structured Logs <span class="panel-tag">Loki</span></div>
+        <div class="panel-body" style="font-family:var(--font-mono);font-size:11px;line-height:2;padding:12px 14px">
+          <div style="color:var(--text-muted)">2025-10-14T09:02:11Z</div> | <span style="color:var(--accent-blue)">OB-PS-008</span> | <span class="tag tag-todo">todo</span> | system<br>
+          <div style="color:var(--text-muted)">2025-10-14T14:18:33Z</div> | <span style="color:var(--accent-blue)">OB-PS-008</span> | <span class="tag tag-in-progress">in_progress</span> | dev:sarah (commit a1b2c3d)<br>
+          <div style="color:var(--text-muted)">2025-10-17T11:05:22Z</div> | <span style="color:var(--accent-blue)">OB-PS-008</span> | <span class="tag tag-review">review</span> | github:PR#142<br>
+          <div style="color:var(--text-muted)">2025-10-18T08:44:19Z</div> | <span style="color:var(--accent-blue)">OB-PS-008</span> | <span class="tag tag-blocked">blocked</span> | ci:integration-tests (3 failures)<br>
+          <div style="color:var(--text-muted)">2025-10-19T15:22:07Z</div> | <span style="color:var(--accent-blue)">OB-PS-008</span> | <span class="tag tag-review">review</span> | dev:sarah (commit e5f6g7h)<br>
+          <div style="color:var(--text-muted)">2025-10-20T10:31:45Z</div> | <span style="color:var(--accent-blue)">OB-PS-008</span> | <span class="tag tag-done">done</span> | github:PR#142 merged
+        </div>
+      </div>
+
+      <div class="section-heading">Evidence Chain — Decision to Deployment <span class="minute-badge">Min 3</span></div>
+      <div class="panel">
+        <div class="panel-header">Trace View — OB-PS-008 Evidence Chain <span class="panel-tag">Tempo</span></div>
+        <div class="panel-body">
+          <div class="timeline">
+            <div class="event">
+              <div class="event-time">2025-10-12 — Architectural Decision</div>
+              <div class="event-text"><span style="color:var(--accent-purple)">ADR-007:</span> Implement retry with exponential backoff for payment API<br><span style="font-size:11px;color:var(--text-muted)">Author: sarah | Reviewers: mike, alex | Status: accepted</span></div>
+            </div>
+            <div class="event">
+              <div class="event-time">2025-10-14–19 — Implementation</div>
+              <div class="event-text"><span style="color:var(--accent-blue)">4 commits</span> linked to OB-PS-008<br><span style="font-size:11px;color:var(--text-muted)">a1b2c3d, e5f6g7h, i9j0k1l, m2n3o4p | PR #142</span></div>
+            </div>
+            <div class="event green">
+              <div class="event-time">2025-10-19 — Test Results</div>
+              <div class="event-text"><span style="color:var(--accent-green)">142 tests passed</span>, 0 failed<br><span style="font-size:11px;color:var(--text-muted)">CI run #4821 | Integration suite: 38 tests | Unit: 104 tests</span></div>
+            </div>
+            <div class="event green">
+              <div class="event-time">2025-10-20 — Deployment</div>
+              <div class="event-text"><span style="color:var(--accent-green)">Deployed to production</span><br><span style="font-size:11px;color:var(--text-muted)">Image: paymentservice:v2.4.1 | Rollout: 100% | Canary: passed</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================== -->
+    <!-- PERSONA: AI Agent -->
+    <!-- ================================================================== -->
+    <div class="screen" id="screen-persona-agent">
+      <div class="persona-header">
+        <h1>AI Agent Deep-Dive</h1>
+        <div class="persona-pitch">Agents build on prior knowledge.</div>
+        <div class="persona-pain">Pain addressed: $205K/yr — context rediscovery + framework isolation</div>
+      </div>
+      <div class="section-heading">Decisions as Telemetry <span class="minute-badge">Min 1</span></div>
+      <div class="panel">
+        <div class="panel-header">Insight Span Detail <span class="panel-tag">Tempo</span></div>
+        <div class="panel-body span-detail">
+          <div class="attr-row"><span class="attr-key">span.name</span><span class="attr-val">insight:decision</span></div>
+          <div class="attr-row"><span class="attr-key">insight.type</span><span class="attr-val" style="color:var(--accent-purple)">decision</span></div>
+          <div class="attr-row"><span class="attr-key">insight.summary</span><span class="attr-val">Use connection pooling for cartservice DB access</span></div>
+          <div class="attr-row"><span class="attr-key">insight.confidence</span><span class="attr-val" style="color:var(--accent-green)">0.95</span></div>
+          <div class="attr-row"><span class="attr-key">insight.evidence</span><span class="attr-val" style="color:var(--accent-blue)">["ADR-012", "benchmark-results-jan28"]</span></div>
+          <div class="attr-row"><span class="attr-key">insight.alternatives</span><span class="attr-val">["single connections (rejected: 3x latency)", "pgbouncer (rejected: ops overhead)"]</span></div>
+          <div class="attr-row"><span class="attr-key">task.service</span><span class="attr-val">cartservice</span></div>
+          <div class="attr-row"><span class="attr-key">agent.name</span><span class="attr-val">claude-lead-contractor</span></div>
+          <div class="attr-row"><span class="attr-key">agent.session</span><span class="attr-val">session-2025-01-28-001</span></div>
+        </div>
+      </div>
+
+      <div class="section-heading">A2A Agent Discovery <span class="minute-badge">Min 3</span></div>
+      <div class="panel">
+        <div class="panel-header">.well-known/agent.json <span class="panel-tag">A2A Protocol</span></div>
+        <div class="panel-body" style="font-family:var(--font-mono);font-size:12px;line-height:1.7;color:var(--text-secondary)">
+          {<br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">"name"</span>: <span style="color:var(--accent-green)">"contextcore-agent"</span>,<br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">"description"</span>: <span style="color:var(--accent-green)">"ContextCore project tracking and insight management"</span>,<br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">"url"</span>: <span style="color:var(--accent-green)">"http://localhost:8080"</span>,<br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">"capabilities"</span>: { <span style="color:var(--accent-purple)">"streaming"</span>: <span style="color:var(--accent-orange)">false</span>, <span style="color:var(--accent-purple)">"pushNotifications"</span>: <span style="color:var(--accent-orange)">false</span> },<br>
+          &nbsp;&nbsp;<span style="color:var(--accent-purple)">"skills"</span>: [<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span style="color:var(--accent-purple)">"id"</span>: <span style="color:var(--accent-green)">"task-tracking"</span>, <span style="color:var(--accent-purple)">"name"</span>: <span style="color:var(--accent-green)">"Task Tracking"</span> },<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span style="color:var(--accent-purple)">"id"</span>: <span style="color:var(--accent-green)">"insight-management"</span>, <span style="color:var(--accent-purple)">"name"</span>: <span style="color:var(--accent-green)">"Insight Management"</span> },<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;{ <span style="color:var(--accent-purple)">"id"</span>: <span style="color:var(--accent-green)">"project-queries"</span>, <span style="color:var(--accent-purple)">"name"</span>: <span style="color:var(--accent-green)">"Project Queries"</span> }<br>
+          &nbsp;&nbsp;]<br>
+          }
+        </div>
+      </div>
+
+      <div class="section-heading">Agent Handoff <span class="minute-badge">Min 4</span></div>
+      <div class="panel">
+        <div class="panel-header">Handoff Span — Task Delegation <span class="panel-tag">Tempo</span></div>
+        <div class="panel-body span-detail">
+          <div class="attr-row"><span class="attr-key">handoff.from_agent</span><span class="attr-val" style="color:var(--accent-blue)">claude-lead-contractor</span></div>
+          <div class="attr-row"><span class="attr-key">handoff.to_agent</span><span class="attr-val" style="color:var(--accent-purple)">gpt4o-mini-drafter</span></div>
+          <div class="attr-row"><span class="attr-key">handoff.task_id</span><span class="attr-val">OB-FE-042</span></div>
+          <div class="attr-row"><span class="attr-key">handoff.context_size</span><span class="attr-val">2,847 tokens</span></div>
+          <div class="attr-row"><span class="attr-key">handoff.includes</span><span class="attr-val">task_history, constraints, prior_decisions (3)</span></div>
+          <div class="attr-row"><span class="attr-key">handoff.status</span><span class="attr-val" style="color:var(--accent-green)">accepted</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+// ==========================================================================
+// Navigation
+// ==========================================================================
+const navItems = document.querySelectorAll('.nav-item[data-screen]');
+const screens = document.querySelectorAll('.screen');
+const breadcrumb = document.getElementById('breadcrumb-text');
+
+const screenTitles = {
+  'paradigm': 'Concept Demo / The Paradigm',
+  'tasks-as-spans': 'Concept Demo / Tasks as Spans',
+  'dashboard-layer': 'Concept Demo / Dashboard Layer',
+  'intelligence-layer': 'Concept Demo / Intelligence Layer',
+  'ecosystem': 'Concept Demo / Ecosystem',
+  'persona-dev': 'Persona / Developer',
+  'persona-pm': 'Persona / Project Manager',
+  'persona-leader': 'Persona / Engineering Leader',
+  'persona-sre': 'Persona / Operator & SRE',
+  'persona-compliance': 'Persona / Compliance Officer',
+  'persona-agent': 'Persona / AI Agent',
+};
+
+navItems.forEach(item => {
+  item.addEventListener('click', () => {
+    const target = item.dataset.screen;
+    navItems.forEach(n => n.classList.remove('active'));
+    item.classList.add('active');
+    screens.forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + target).classList.add('active');
+    breadcrumb.textContent = screenTitles[target] || 'Business Observability';
+    // Re-render charts if switching to PM view
+    if (target === 'persona-pm') setTimeout(renderCharts, 50);
+  });
+});
+
+// ==========================================================================
+// Portfolio Data
+// ==========================================================================
+const services = [
+  { name: 'frontend', crit: 'critical', epics: 3, stories: 12, tasks: 38, done: 28, blocked: 1, health: 'yellow' },
+  { name: 'checkoutservice', crit: 'critical', epics: 2, stories: 8, tasks: 24, done: 16, blocked: 2, health: 'red' },
+  { name: 'paymentservice', crit: 'critical', epics: 2, stories: 7, tasks: 21, done: 15, blocked: 1, health: 'yellow' },
+  { name: 'cartservice', crit: 'high', epics: 2, stories: 6, tasks: 19, done: 16, blocked: 0, health: 'green' },
+  { name: 'productcatalogservice', crit: 'high', epics: 2, stories: 8, tasks: 26, done: 22, blocked: 0, health: 'green' },
+  { name: 'shippingservice', crit: 'high', epics: 2, stories: 5, tasks: 18, done: 12, blocked: 0, health: 'yellow' },
+  { name: 'currencyservice', crit: 'medium', epics: 1, stories: 4, tasks: 16, done: 14, blocked: 0, health: 'green' },
+  { name: 'emailservice', crit: 'medium', epics: 1, stories: 4, tasks: 15, done: 13, blocked: 0, health: 'green' },
+  { name: 'recommendationservice', crit: 'medium', epics: 1, stories: 5, tasks: 22, done: 18, blocked: 0, health: 'green' },
+  { name: 'adservice', crit: 'medium', epics: 1, stories: 4, tasks: 18, done: 16, blocked: 0, health: 'green' },
+  { name: 'loadgenerator', crit: 'low', epics: 1, stories: 3, tasks: 30, done: 28, blocked: 0, health: 'green' },
+];
+
+const healthColors = { green: 'var(--accent-green)', yellow: 'var(--accent-orange)', red: 'var(--critical)' };
+const critTags = { critical: 'tag-critical', high: 'tag-high', medium: 'tag-medium', low: 'tag-low' };
+
+const tbody = document.getElementById('portfolio-table');
+services.forEach(s => {
+  const pct = Math.round((s.done / s.tasks) * 100);
+  const fillColor = s.health === 'red' ? 'var(--critical)' : s.health === 'yellow' ? 'var(--accent-orange)' : 'var(--accent-green)';
+  tbody.innerHTML += `<tr>
+    <td><span class="health-dot" style="background:${healthColors[s.health]}"></span></td>
+    <td style="font-weight:600">${s.name}</td>
+    <td><span class="tag ${critTags[s.crit]}">${s.crit}</span></td>
+    <td>${s.epics}</td><td>${s.stories}</td><td>${s.tasks}</td>
+    <td style="min-width:120px"><div class="progress-bar"><div class="progress-fill" style="width:${pct}%;background:${fillColor}"></div></div><span style="font-size:10px;color:var(--text-muted)">${pct}%</span></td>
+    <td>${s.blocked > 0 ? '<span style="color:var(--critical);font-weight:700">' + s.blocked + '</span>' : '<span style="color:var(--text-muted)">0</span>'}</td>
+  </tr>`;
+});
+
+// ==========================================================================
+// Workload chart (Eng Leader)
+// ==========================================================================
+const workloadData = [
+  { name: 'sarah', tasks: 7, color: 'var(--critical)' },
+  { name: 'mike', tasks: 5, color: 'var(--accent-orange)' },
+  { name: 'alex', tasks: 4, color: 'var(--accent-blue)' },
+  { name: 'alice', tasks: 3, color: 'var(--accent-green)' },
+  { name: 'bob', tasks: 3, color: 'var(--accent-green)' },
+  { name: 'carol', tasks: 2, color: 'var(--accent-green)' },
+  { name: 'dave', tasks: 1, color: 'var(--accent-green)' },
+];
+const maxTasks = 8;
+const wlContainer = document.getElementById('workload-chart');
+workloadData.forEach(w => {
+  const pct = (w.tasks / maxTasks) * 100;
+  const overload = w.tasks > 5 ? ' (OVERLOADED)' : '';
+  wlContainer.innerHTML += `<div class="workload-row">
+    <div class="workload-name">${w.name}${overload ? '<br><span style="color:var(--critical);font-size:10px">OVERLOADED</span>' : ''}</div>
+    <div class="workload-bar"><div class="workload-fill" style="width:${pct}%;background:${w.color}">${w.tasks}</div></div>
+    <div class="workload-count" style="color:${w.color}">${w.tasks}</div>
+  </div>`;
+});
+
+// ==========================================================================
+// Charts (PM Sprint view) — simple canvas charts
+// ==========================================================================
+function renderCharts() {
+  drawVelocityChart();
+  drawBurndownChart();
+}
+
+function drawVelocityChart() {
+  const canvas = document.getElementById('chart-velocity');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const w = rect.width, h = rect.height;
+
+  ctx.clearRect(0, 0, w, h);
+  const data = [18, 22, 19, 25, 21, 28, 24, 31, 27, 33];
+  const labels = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10'];
+  const maxV = 40;
+  const barW = (w - 60) / data.length;
+  const chartH = h - 40;
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = 20 + (chartH / 4) * i;
+    ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(w - 10, y); ctx.stroke();
+    ctx.fillStyle = '#5f6672'; ctx.font = '10px sans-serif';
+    ctx.fillText(Math.round(maxV - (maxV / 4) * i), 8, y + 4);
+  }
+
+  // Bars
+  data.forEach((v, i) => {
+    const x = 45 + i * barW;
+    const barH = (v / maxV) * chartH;
+    const y = 20 + chartH - barH;
+    ctx.fillStyle = i === data.length - 1 ? '#3274d9' : 'rgba(50,116,217,0.5)';
+    ctx.fillRect(x, y, barW - 6, barH);
+    ctx.fillStyle = '#5f6672'; ctx.font = '10px sans-serif';
+    ctx.fillText(labels[i], x + (barW - 6) / 2 - 6, h - 6);
+  });
+
+  // Trend line
+  ctx.strokeStyle = '#56a64b';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  data.forEach((v, i) => {
+    const x = 45 + i * barW + (barW - 6) / 2;
+    const y = 20 + chartH - (v / maxV) * chartH;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawBurndownChart() {
+  const canvas = document.getElementById('chart-burndown');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const w = rect.width, h = rect.height;
+
+  ctx.clearRect(0, 0, w, h);
+  const ideal = [40, 36, 32, 28, 24, 20, 16, 12, 8, 4, 0];
+  const actual = [40, 38, 35, 33, 29, 26, 23, 19, 16, null, null];
+  const chartH = h - 40;
+  const maxV = 45;
+  const stepW = (w - 60) / (ideal.length - 1);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = 20 + (chartH / 4) * i;
+    ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(w - 10, y); ctx.stroke();
+    ctx.fillStyle = '#5f6672'; ctx.font = '10px sans-serif';
+    ctx.fillText(Math.round(maxV - (maxV / 4) * i), 8, y + 4);
+  }
+
+  // Ideal line
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ideal.forEach((v, i) => {
+    const x = 45 + i * stepW;
+    const y = 20 + chartH - (v / maxV) * chartH;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Actual line
+  ctx.strokeStyle = '#3274d9';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  actual.forEach((v, i) => {
+    if (v === null) return;
+    const x = 45 + i * stepW;
+    const y = 20 + chartH - (v / maxV) * chartH;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Day labels
+  ctx.fillStyle = '#5f6672'; ctx.font = '10px sans-serif';
+  for (let i = 0; i < ideal.length; i++) {
+    ctx.fillText('D' + (i + 1), 42 + i * stepW - 6, h - 6);
+  }
+
+  // Legend
+  ctx.fillStyle = '#5f6672'; ctx.font = '10px sans-serif';
+  ctx.fillText('-- ideal', w - 80, 16);
+  ctx.fillStyle = '#3274d9';
+  ctx.fillText('actual', w - 40, 16);
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    const active = document.querySelector('.nav-item.active');
+    const next = active.nextElementSibling;
+    if (next && next.classList.contains('nav-item')) next.click();
+    else {
+      // Skip h3 headers
+      const afterH3 = active.nextElementSibling?.nextElementSibling;
+      if (afterH3 && afterH3.classList.contains('nav-item')) afterH3.click();
+    }
+  } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    const active = document.querySelector('.nav-item.active');
+    const prev = active.previousElementSibling;
+    if (prev && prev.classList.contains('nav-item')) prev.click();
+    else {
+      const beforeH3 = active.previousElementSibling?.previousElementSibling;
+      if (beforeH3 && beforeH3.classList.contains('nav-item')) beforeH3.click();
+    }
+  }
+});
+</script>
+</body>
+</html>
