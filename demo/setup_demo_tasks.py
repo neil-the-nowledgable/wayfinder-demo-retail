@@ -58,6 +58,159 @@ DEV_ROOT = Path(os.environ.get("CONTEXTCORE_DEV_ROOT", str(_DEFAULT_DEV_ROOT)))
 #   - package: Which ecosystem package this demonstrates
 # =============================================================================
 
+# =============================================================================
+# CONCEPT DEMO TASK DEFINITIONS
+# =============================================================================
+# Minimal set of tasks for the 5-minute concept demo walkthrough.
+# Each task demonstrates a specific capability without requiring full
+# infrastructure. Used with --concept-mode flag.
+# =============================================================================
+
+CONCEPT_TASKS = [
+    {
+        "id": "CONCEPT-EPIC",
+        "title": "Business Observability Concept Demo",
+        "type": "epic",
+        "phase": 0,
+        "depends_on": [],
+        "package": "all",
+        "prompt": """This epic tracks the Business Observability concept demo.
+
+Demonstrates the core paradigm: tasks as OTel spans, status derived from
+artifacts, dashboards from telemetry, and the Wayfinder ecosystem.
+
+Persona deep-dives available for: Developer, PM, Engineering Leader,
+Operator/SRE, Compliance Officer, AI Agent.
+"""
+    },
+    {
+        "id": "CONCEPT-TASKS-AS-SPANS",
+        "title": "Demonstrate: Tasks as OTel Spans",
+        "type": "task",
+        "phase": 1,
+        "depends_on": ["CONCEPT-EPIC"],
+        "package": "spider",
+        "prompt": """Demonstrate the core 'tasks as spans' pattern.
+
+Show that a task is an OpenTelemetry span with:
+- Start time, end time, duration
+- Attributes: task.id, task.title, task.status, task.type
+- Events: status transitions (todo -> in_progress -> done)
+- Parent-child hierarchy: epic -> story -> task
+
+Reference: ContextCore/examples/01_basic_task_tracking.py
+
+QUERY TO DEMONSTRATE:
+{span.task.id != ""} | select(span.task.id, span.task.title, span.task.status) | limit(5)
+"""
+    },
+    {
+        "id": "CONCEPT-STATUS-DERIVATION",
+        "title": "Demonstrate: Auto-Derived Status",
+        "type": "task",
+        "phase": 1,
+        "depends_on": ["CONCEPT-TASKS-AS-SPANS"],
+        "package": "spider",
+        "prompt": """Demonstrate that task status is derived from artifacts, not manually updated.
+
+Show the artifact-to-status mapping:
+- Git commit with task ID -> status: in_progress
+- PR opened -> status: review
+- PR merged -> status: done
+
+Reference: ContextCore/examples/03_artifact_status_derivation.py
+
+QUERY TO DEMONSTRATE:
+{span.task.status.source = "artifact"} | select(span.task.id, span.task.status, span.artifact.type)
+"""
+    },
+    {
+        "id": "CONCEPT-DASHBOARDS",
+        "title": "Demonstrate: Dashboard Layer",
+        "type": "task",
+        "phase": 1,
+        "depends_on": ["CONCEPT-STATUS-DERIVATION"],
+        "package": "spider",
+        "prompt": """Show the dashboard layer built on task spans.
+
+Dashboards to show:
+- Portfolio Overview: all 11 services at a glance
+- Sprint Metrics: velocity, burndown, cycle time
+- Project Progress: task/epic counts, milestones
+
+Key point: same Grafana, same TraceQL, same alerting infrastructure.
+No new tools required.
+
+DASHBOARD URLS:
+- Portfolio: http://localhost:3000/d/portfolio/project-portfolio-overview
+- Sprint: http://localhost:3000/d/sprint-metrics/sprint-metrics
+"""
+    },
+    {
+        "id": "CONCEPT-INSIGHTS",
+        "title": "Demonstrate: Agent Intelligence Layer",
+        "type": "task",
+        "phase": 2,
+        "depends_on": ["CONCEPT-DASHBOARDS"],
+        "package": "beaver",
+        "prompt": """Demonstrate the intelligence layer: insights, constraints, decisions.
+
+Show:
+- Agent decisions stored as insight spans with confidence scores
+- Persistent memory: query prior decisions from Tempo
+- Constraint evaluation: agents follow human-defined rules
+
+Reference: ContextCore/examples/02_agent_insights.py
+
+QUERY TO DEMONSTRATE:
+{span.insight.type = "decision" && span.insight.confidence >= 0.8}
+| select(span.insight.summary, span.insight.confidence, span.insight.evidence)
+"""
+    },
+    {
+        "id": "CONCEPT-ALERT-ENRICHMENT",
+        "title": "Demonstrate: Alert Enrichment",
+        "type": "task",
+        "phase": 2,
+        "depends_on": ["CONCEPT-INSIGHTS"],
+        "package": "fox",
+        "prompt": """Demonstrate business-context-enriched alerts.
+
+Show:
+- ProjectContext CRD with criticality, owner, business value
+- Alert arrives with enriched metadata (not just alertname + severity)
+- Priority routing: critical services page, low-priority queues
+
+Reference: ContextCore/demo/projectcontexts/checkoutservice.yaml
+
+KEY POINT: Every alert arrives with context. No 'who owns this?' at 2am.
+"""
+    },
+    {
+        "id": "CONCEPT-ECOSYSTEM",
+        "title": "Demonstrate: Wayfinder Ecosystem",
+        "type": "task",
+        "phase": 3,
+        "depends_on": ["CONCEPT-ALERT-ENRICHMENT"],
+        "package": "all",
+        "prompt": """Show the complete Wayfinder ecosystem.
+
+Name each package by purpose:
+- Alert Routing (Rabbit/Waabooz)
+- Alert Automation (Fox/Waagosh)
+- Agent Pipelines (Coyote/Wiisagi-ma'iingan)
+- Multi-LLM Agent SDK (Beaver/StartD8)
+- Knowledge Management (Squirrel/Ajidamoo)
+
+Key point: Everything emits OTel. Everything lands in Grafana. No silos.
+"""
+    },
+]
+
+# =============================================================================
+# FULL DEMO TASK DEFINITIONS (Self-Tracking Demo)
+# =============================================================================
+
 DEMO_TASKS = [
     # ==========================================================================
     # EPIC: Ecosystem Demo
@@ -790,7 +943,8 @@ def setup_demo_tasks(
     phases: List[int] = None,
     dry_run: bool = False,
     clean: bool = False,
-    verbose: bool = False
+    verbose: bool = False,
+    concept_mode: bool = False
 ) -> Dict[str, Any]:
     """Create demo tasks in ContextCore state directory."""
 
@@ -799,12 +953,16 @@ def setup_demo_tasks(
         "tasks_skipped": [],
         "errors": [],
         "state_dir": str(STATE_DIR),
+        "mode": "concept" if concept_mode else "full",
     }
 
+    # Select task set based on mode
+    source_tasks = CONCEPT_TASKS if concept_mode else DEMO_TASKS
+
     # Filter tasks by phase if specified
-    tasks_to_create = DEMO_TASKS
+    tasks_to_create = source_tasks
     if phases:
-        tasks_to_create = [t for t in DEMO_TASKS if t["phase"] in phases or t["phase"] == 0]
+        tasks_to_create = [t for t in source_tasks if t["phase"] in phases or t["phase"] == 0]
 
     if verbose:
         print(f"Demo project: {DEMO_PROJECT}")
@@ -896,23 +1054,31 @@ def main():
         action="store_true",
         help="List all demo tasks without creating"
     )
+    parser.add_argument(
+        "--concept-mode",
+        action="store_true",
+        help="Create minimal concept demo tasks (for 5-min walkthrough)"
+    )
 
     args = parser.parse_args()
 
     if args.list:
+        task_set = CONCEPT_TASKS if args.concept_mode else DEMO_TASKS
+        mode_label = "CONCEPT DEMO" if args.concept_mode else "ECOSYSTEM DEMO"
         print("=" * 70)
-        print("CONTEXTCORE ECOSYSTEM DEMO TASKS")
+        print(f"CONTEXTCORE {mode_label} TASKS")
         print("=" * 70)
         print()
-        for task in DEMO_TASKS:
+        for task in task_set:
             deps = f" (depends: {', '.join(task['depends_on'])})" if task['depends_on'] else ""
             print(f"Phase {task['phase']}: [{task['package'].upper()}] {task['id']}")
             print(f"         {task['title']}{deps}")
             print()
         return
 
+    mode_label = "Concept Demo" if args.concept_mode else "Ecosystem Demo"
     print("=" * 70)
-    print("CONTEXTCORE ECOSYSTEM DEMO: Task Setup")
+    print(f"CONTEXTCORE {mode_label.upper()}: Task Setup")
     print("=" * 70)
     print()
 
@@ -920,7 +1086,8 @@ def main():
         phases=args.phases,
         dry_run=args.dry_run,
         clean=args.clean,
-        verbose=args.verbose or args.dry_run
+        verbose=args.verbose or args.dry_run,
+        concept_mode=args.concept_mode
     )
 
     print()
