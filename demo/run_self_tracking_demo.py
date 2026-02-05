@@ -50,6 +50,8 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -75,6 +77,12 @@ DEMO_SPRINT = "demo-sprint-1"
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_DIR = _SCRIPT_DIR.parent
 OUTPUT_DIR = _PROJECT_DIR / "output" / "observability"
+PARAMS_DIR = OUTPUT_DIR / "params"
+
+# Jsonnet compilation settings
+JSONNET_BIN = shutil.which("jsonnet") or shutil.which("go-jsonnet")
+MIXIN_DIR = Path(os.environ.get("WAYFINDER_MIXIN_DIR",
+    str(_PROJECT_DIR.parent / "wayfinder" / "wayfinder-mixin")))
 
 # Delimiter pattern in drafter output: --- ARTIFACT_TYPE: service_name ---
 _DELIMITER_RE = re.compile(r'^---\s*(\w+):\s*(\S+)\s*---\s*$', re.MULTILINE)
@@ -101,11 +109,121 @@ _TASK_KEY_TO_DELIMITER = {
     "RUNBOOK": "RUNBOOK",
 }
 
+# Map artifact key to jsonnet factory file name (for PARAMS compilation)
+_ARTIFACT_KEY_TO_FACTORY = {
+    "DASHBOARDS": "dashboard",
+    "DASHBOARD": "dashboard",
+    "ALERTS": "alerts",
+    "SLOS": "slo",
+    "NOTIFY": "notification",
+    "LOKI-RULES": "loki_rules",
+}
+
+# Map artifact key to output format (json or yaml)
+_ARTIFACT_KEY_TO_FORMAT = {
+    "DASHBOARDS": "json",
+    "DASHBOARD": "json",
+    "ALERTS": "yaml",
+    "SLOS": "yaml",
+    "NOTIFY": "yaml",
+    "LOKI-RULES": "yaml",
+}
+
+
+def _compile_jsonnet(
+    params_file: Path,
+    artifact_key: str,
+    service_name: str,
+) -> Optional[Path]:
+    """Compile .libsonnet params via wayfinder-mixin factory -> JSON/YAML.
+
+    Args:
+        params_file: Path to the .libsonnet params file
+        artifact_key: The artifact key (DASHBOARDS, ALERTS, etc.)
+        service_name: Name of the service
+
+    Returns:
+        Path to the compiled output file, or None if compilation failed
+    """
+    if not JSONNET_BIN:
+        return None
+
+    factory_name = _ARTIFACT_KEY_TO_FACTORY.get(artifact_key)
+    if not factory_name:
+        return None
+
+    factory_path = MIXIN_DIR / "services" / f"{factory_name}.libsonnet"
+    if not factory_path.exists():
+        print(f"    [WARN] Factory not found: {factory_path}")
+        return None
+
+    # Determine output format
+    output_format = _ARTIFACT_KEY_TO_FORMAT.get(artifact_key, "json")
+    cfg = ARTIFACT_OUTPUT_CONFIG.get(_TASK_KEY_TO_DELIMITER.get(artifact_key))
+    if not cfg:
+        return None
+
+    out_dir = OUTPUT_DIR / cfg["dir"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build jsonnet expression
+    # For YAML output, wrap in std.manifestYamlDoc()
+    if output_format == "yaml":
+        expr = (
+            f'local f = import "{factory_path}"; '
+            f'local s = import "{params_file}"; '
+            f'std.manifestYamlDoc(f(s))'
+        )
+    else:
+        expr = (
+            f'local f = import "{factory_path}"; '
+            f'local s = import "{params_file}"; '
+            f'f(s)'
+        )
+
+    # Run jsonnet
+    # For YAML output, use -S flag to get raw string output (not JSON-encoded)
+    try:
+        cmd = [JSONNET_BIN, "-J", str(MIXIN_DIR / "vendor")]
+        if output_format == "yaml":
+            cmd.append("-S")  # String output mode for YAML
+        cmd.extend(["-e", expr])
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if result.returncode != 0:
+            print(f"    [ERR] jsonnet compilation failed for {service_name}:")
+            # Show first 200 chars of error
+            err_preview = result.stderr[:200] if result.stderr else "unknown error"
+            print(f"          {err_preview}")
+            return None
+
+        # Write output
+        ext = cfg["ext"]
+        filename = f"{service_name}-{cfg['suffix']}.{ext}"
+        output_file = out_dir / filename
+        output_file.write_text(result.stdout)
+        return output_file
+
+    except subprocess.TimeoutExpired:
+        print(f"    [ERR] jsonnet compilation timed out for {service_name}")
+        return None
+    except Exception as e:
+        print(f"    [ERR] jsonnet compilation error for {service_name}: {e}")
+        return None
+
 
 def _ensure_output_dirs():
     """Create output directory structure on startup."""
     for cfg in ARTIFACT_OUTPUT_CONFIG.values():
         (OUTPUT_DIR / cfg["dir"]).mkdir(parents=True, exist_ok=True)
+    # Also create params directory
+    PARAMS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _parse_task_artifact_key(task_id: str) -> Optional[str]:
@@ -125,12 +243,45 @@ def _strip_code_fences(text: str) -> str:
     return text.strip()
 
 
+def _truncate_to_valid_json(text: str) -> str:
+    """Extract the first valid JSON object/array, discarding trailing text."""
+    text = text.lstrip()
+    if not text or text[0] not in ('{', '['):
+        return text
+    try:
+        dec = json.JSONDecoder()
+        _obj, end = dec.raw_decode(text)
+        return text[:end].strip()
+    except (json.JSONDecodeError, ValueError):
+        return text
+
+
+def _truncate_to_valid_yaml(text: str) -> str:
+    """Strip trailing non-YAML commentary (markdown headings, prose, etc.)."""
+    # YAML documents end at `---` or `...` or when non-YAML prose appears.
+    # Look for lines starting with `##` (markdown heading) which signal
+    # the drafter's commentary rather than YAML content.
+    lines = text.split('\n')
+    cut = len(lines)
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith('## ') or stripped.startswith('# '):
+            # Markdown heading after YAML content -> commentary starts here
+            cut = i
+            break
+    return '\n'.join(lines[:cut]).strip()
+
+
 def _split_and_save_artifacts(task_id: str, content, service_names: List[str] = None) -> int:
     """Split multi-service output by delimiters and save per-service files.
 
     content may be a str, dict, or other type from the workflow result.
     service_names: optional list of expected services (for single-service fallback).
     Returns the number of artifacts saved.
+
+    Supports two delimiter types:
+    - PARAMS: Save .libsonnet files and compile via jsonnet factory functions
+    - Others (DASHBOARD, PROMETHEUS_RULE, etc.): Save raw content directly
     """
     # Coerce content to string
     if content is None:
@@ -151,6 +302,84 @@ def _split_and_save_artifacts(task_id: str, content, service_names: List[str] = 
     if not artifact_key:
         return 0
 
+    # Find all delimiter positions
+    matches = list(_DELIMITER_RE.finditer(content))
+
+    # Check if this is PARAMS output (jsonnet compilation required)
+    is_params_output = any(m.group(1) == "PARAMS" for m in matches)
+
+    if is_params_output:
+        return _handle_params_output(task_id, artifact_key, content, matches, service_names)
+    else:
+        return _handle_raw_output(task_id, artifact_key, content, matches, service_names)
+
+
+def _handle_params_output(
+    task_id: str,
+    artifact_key: str,
+    content: str,
+    matches: List,
+    service_names: List[str] = None,
+) -> int:
+    """Handle PARAMS delimiter type: save .libsonnet and compile via jsonnet."""
+    PARAMS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Warn if jsonnet is not available
+    if not JSONNET_BIN:
+        print(f"    [WARN] jsonnet not found; params will be saved but not compiled")
+
+    saved = 0
+    compiled = 0
+
+    for i, match in enumerate(matches):
+        found_type = match.group(1)
+        service_name = match.group(2)
+
+        # Only process PARAMS delimiters
+        if found_type != "PARAMS":
+            continue
+
+        # Extract content between this delimiter and the next (or end)
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
+        params_content = content[start:end].strip()
+
+        if not params_content:
+            continue
+
+        # Strip code fences
+        params_content = _strip_code_fences(params_content)
+
+        if not params_content:
+            continue
+
+        # Save .libsonnet params file
+        params_filename = f"{service_name}-params.libsonnet"
+        params_filepath = PARAMS_DIR / params_filename
+        params_filepath.write_text(params_content + "\n")
+        saved += 1
+
+        # Compile via jsonnet if available
+        if JSONNET_BIN and artifact_key in _ARTIFACT_KEY_TO_FACTORY:
+            output_file = _compile_jsonnet(params_filepath, artifact_key, service_name)
+            if output_file:
+                compiled += 1
+                print(f"      Compiled: {service_name} -> {output_file.name}")
+
+    if saved > 0 and compiled < saved:
+        print(f"    [INFO] Saved {saved} params, compiled {compiled}")
+
+    return compiled if compiled > 0 else saved
+
+
+def _handle_raw_output(
+    task_id: str,
+    artifact_key: str,
+    content: str,
+    matches: List,
+    service_names: List[str] = None,
+) -> int:
+    """Handle raw output (direct JSON/YAML/Markdown without compilation)."""
     delimiter_type = _TASK_KEY_TO_DELIMITER.get(artifact_key)
     if not delimiter_type:
         return 0
@@ -162,13 +391,15 @@ def _split_and_save_artifacts(task_id: str, content, service_names: List[str] = 
     out_dir = OUTPUT_DIR / cfg["dir"]
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Find all delimiter positions
-    matches = list(_DELIMITER_RE.finditer(content))
-
     # Single-service fallback: if only 1 service expected and no delimiters
     # found, treat the entire content as the artifact for that service.
     if not matches and service_names and len(service_names) == 1:
         artifact_content = _strip_code_fences(content)
+        ext = cfg["ext"]
+        if ext == "json":
+            artifact_content = _truncate_to_valid_json(artifact_content)
+        elif ext in ("yaml", "yml"):
+            artifact_content = _truncate_to_valid_yaml(artifact_content)
         if artifact_content:
             filename = f"{service_names[0]}-{cfg['suffix']}.{cfg['ext']}"
             filepath = out_dir / filename
@@ -206,11 +437,31 @@ def _split_and_save_artifacts(task_id: str, content, service_names: List[str] = 
         if not artifact_content:
             continue
 
+        # Truncate trailing LLM commentary (especially for the last artifact
+        # in a multi-service output where the drafter adds summary notes).
+        ext = cfg["ext"]
+        if ext == "json":
+            artifact_content = _truncate_to_valid_json(artifact_content)
+        elif ext in ("yaml", "yml"):
+            artifact_content = _truncate_to_valid_yaml(artifact_content)
+
+        if not artifact_content:
+            continue
+
         filename = f"{service_name}-{cfg['suffix']}.{cfg['ext']}"
         filepath = out_dir / filename
 
         filepath.write_text(artifact_content + "\n")
         saved += 1
+
+    # Warn if fewer artifacts were saved than expected services
+    if service_names and saved < len(service_names):
+        import warnings
+        warnings.warn(
+            f"[{task_id}] Only {saved}/{len(service_names)} artifacts parsed - "
+            f"possible LLM truncation. Missing services may need retry.",
+            UserWarning
+        )
 
     return saved
 
@@ -312,6 +563,8 @@ def run_demo(
     lead_agent: str = "anthropic:claude-sonnet-4-20250514",
     drafter_agent: str = "openai:gpt-4o-mini",
     max_iterations: int = 3,
+    validate_jsonnet: bool = False,
+    strict_validation: bool = False,
 ) -> Dict[str, Any]:
     """Run the self-tracking ecosystem demo."""
 
@@ -321,6 +574,27 @@ def run_demo(
         ContextCoreTaskRunner,
     )
     from startd8.workflows.builtin import LeadContractorWorkflow
+
+    # Import Jsonnet validation if enabled
+    jsonnet_checkpoint = None
+    if validate_jsonnet:
+        try:
+            from jsonnet_validation import (
+                JsonnetCompilationCheckpoint,
+                JSONNET_BIN,
+            )
+            if not JSONNET_BIN:
+                print("[WARN] Jsonnet validation requested but jsonnet binary not found")
+                print("       Install with: brew install go-jsonnet")
+                validate_jsonnet = False
+            else:
+                jsonnet_checkpoint = JsonnetCompilationCheckpoint(
+                    strict_mode=strict_validation,
+                )
+                print(f"[INFO] Jsonnet validation enabled (strict={strict_validation})")
+        except ImportError as e:
+            print(f"[WARN] Cannot enable Jsonnet validation: {e}")
+            validate_jsonnet = False
 
     print("=" * 70)
     print("CONTEXTCORE ECOSYSTEM DEMO: Observability Artifact Generation")
@@ -375,11 +649,15 @@ def run_demo(
         print(f"  Lead agent: {lead_agent}")
         print(f"  Drafter agent: {drafter_agent}")
         print(f"  Max iterations: {max_iterations}")
+        print(f"  Jsonnet validation: {'enabled' if validate_jsonnet else 'disabled'}")
+        if validate_jsonnet:
+            print(f"  Strict validation: {strict_validation}")
         print()
         print("To execute, remove --dry-run flag")
         return {
             "dry_run": True,
             "tasks": [t.task_id for t in tasks],
+            "validate_jsonnet": validate_jsonnet,
         }
 
     # Confirm if not forced
@@ -416,7 +694,9 @@ def run_demo(
         config["lead_agent"] = lead_agent
         config["drafter_agent"] = drafter_agent
         config["max_iterations"] = max_iterations
-        config["fail_on_truncation"] = False
+        # Note: fail_on_truncation defaults to True in the SDK, which will raise
+        # an error if the drafter output is truncated. This is the desired behavior
+        # to catch incomplete artifact generation early.
         task.config = config
 
     # Create runner
@@ -490,7 +770,46 @@ def run_demo(
                     )
                     if saved > 0:
                         artifact_counts[task_id] = saved
-                        msg += f" [{saved} artifacts saved]"
+                        expected = len(svc_names) if svc_names else 0
+                        if expected > 0 and saved < expected:
+                            msg += f" [{saved} artifacts saved] [WARN: {saved}/{expected} services - check for truncation]"
+                        else:
+                            msg += f" [{saved} artifacts saved]"
+
+                        # Run Jsonnet validation checkpoints if enabled
+                        if validate_jsonnet and jsonnet_checkpoint and "-RUNBOOKS" not in task_id:
+                            try:
+                                # Get the params files that were saved
+                                artifact_key = _parse_task_artifact_key(task_id)
+                                if artifact_key and svc_names:
+                                    params_files = [
+                                        PARAMS_DIR / f"{svc}-params.libsonnet"
+                                        for svc in svc_names
+                                        if (PARAMS_DIR / f"{svc}-params.libsonnet").exists()
+                                    ]
+                                    if params_files:
+                                        checkpoint_results = jsonnet_checkpoint.run_all_checkpoints(
+                                            params_files, task_id
+                                        )
+                                        passed = all(
+                                            r.status.value in ("passed", "skipped", "warning")
+                                            for r in checkpoint_results
+                                        )
+                                        failed_count = sum(
+                                            1 for r in checkpoint_results
+                                            if r.status.value == "failed"
+                                        )
+                                        if passed:
+                                            msg += " [validation: OK]"
+                                        else:
+                                            msg += f" [validation: {failed_count} failed]"
+                                            # Log errors for debugging
+                                            for r in checkpoint_results:
+                                                if r.status.value == "failed":
+                                                    for err in r.errors[:2]:
+                                                        print(f"      {r.name}: {err}")
+                            except Exception as val_exc:
+                                msg += f" [validation error: {val_exc}]"
                     else:
                         msg += " [0 artifacts - no delimiters matched]"
                 except Exception as exc:
@@ -512,6 +831,7 @@ def run_demo(
     print(f"Sprint: {DEMO_SPRINT}")
     print(f"Lead Agent: {lead_agent}")
     print(f"Drafter Agent: {drafter_agent}")
+    print(f"Jsonnet Validation: {'enabled' if validate_jsonnet else 'disabled'}")
     print("-" * 70)
     print()
 
@@ -665,6 +985,16 @@ def main():
         action="store_true",
         help="Run setup_demo_tasks.py first"
     )
+    parser.add_argument(
+        "--validate-jsonnet",
+        action="store_true",
+        help="Enable Jsonnet compilation checkpoint validation (validates params compile before accepting)"
+    )
+    parser.add_argument(
+        "--strict-validation",
+        action="store_true",
+        help="Fail on validation warnings (use with --validate-jsonnet)"
+    )
 
     args = parser.parse_args()
 
@@ -716,6 +1046,8 @@ def main():
             lead_agent=args.lead_agent,
             drafter_agent=args.drafter_agent,
             max_iterations=args.max_iterations,
+            validate_jsonnet=args.validate_jsonnet,
+            strict_validation=args.strict_validation,
         )
 
         if result.get("error") or result.get("aborted"):
