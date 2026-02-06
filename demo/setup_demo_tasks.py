@@ -147,33 +147,52 @@ SERVICE_TO_TIER = {
 # Setting to True fixes truncation issues with GPT-4o-mini when batching 3+ services
 DECOMPOSE_TO_SINGLE_SERVICE = True
 
+# =============================================================================
+# ARTIFACT KEY CONSTANTS
+# =============================================================================
+# Plural forms are used for standard services (multiple panel types/rules)
+# Singular forms are used for simplified services (loadgenerator)
+
+ARTIFACT_DASHBOARDS = "DASHBOARDS"  # Standard dashboard with multiple panels
+ARTIFACT_DASHBOARD = "DASHBOARD"    # Simplified single dashboard
+ARTIFACT_ALERTS = "ALERTS"
+ARTIFACT_SLOS = "SLOS"
+ARTIFACT_NOTIFY = "NOTIFY"
+ARTIFACT_LOKI_RULES = "LOKI-RULES"
+ARTIFACT_RUNBOOKS = "RUNBOOKS"
+ARTIFACT_RUNBOOK = "RUNBOOK"        # Simplified single runbook
+
+# Standard artifact list for most services
+STANDARD_ARTIFACTS = [
+    ARTIFACT_DASHBOARDS, ARTIFACT_ALERTS, ARTIFACT_SLOS,
+    ARTIFACT_NOTIFY, ARTIFACT_LOKI_RULES, ARTIFACT_RUNBOOKS,
+]
+
+# Simplified artifact list for loadgenerator (no SLOs, alerts, etc.)
+LOADGEN_ARTIFACTS = [ARTIFACT_DASHBOARD, ARTIFACT_RUNBOOK]
+
 # Tier task configurations: phase ordering, gating dependencies, artifact types
+# Used by batched mode (_generate_batched_tasks) when DECOMPOSE_TO_SINGLE_SERVICE=False
 TIER_CONFIGS = [
     {
         "name": "critical", "prefix": "CRIT", "phase": 1,
         "gate_deps": [],
-        "artifacts": [
-            "DASHBOARDS", "ALERTS", "SLOS", "NOTIFY", "LOKI-RULES", "RUNBOOKS",
-        ],
+        "artifacts": STANDARD_ARTIFACTS,
     },
     {
         "name": "high", "prefix": "HIGH", "phase": 2,
         "gate_deps": ["OB-CRIT-DASHBOARDS"],
-        "artifacts": [
-            "DASHBOARDS", "ALERTS", "SLOS", "NOTIFY", "LOKI-RULES", "RUNBOOKS",
-        ],
+        "artifacts": STANDARD_ARTIFACTS,
     },
     {
         "name": "medium", "prefix": "MED", "phase": 3,
         "gate_deps": ["OB-HIGH-DASHBOARDS"],
-        "artifacts": [
-            "DASHBOARDS", "ALERTS", "SLOS", "NOTIFY", "LOKI-RULES", "RUNBOOKS",
-        ],
+        "artifacts": STANDARD_ARTIFACTS,
     },
     {
         "name": "low", "prefix": "LOW", "phase": 4,
         "gate_deps": ["OB-MED-DASHBOARDS"],
-        "artifacts": ["DASHBOARD", "RUNBOOK"],
+        "artifacts": LOADGEN_ARTIFACTS,
     },
 ]
 
@@ -547,6 +566,111 @@ def _params_output_format_section(n: int, service_contexts: List[Dict]) -> str:
 
 
 # =============================================================================
+# SHARED PROMPT CONFIGURATION
+# =============================================================================
+# Centralized configuration for artifact prompts to reduce duplication.
+
+# Artifact descriptions used in prompt headers
+_ARTIFACT_DESCRIPTIONS = {
+    ARTIFACT_DASHBOARDS: (
+        "Grafana dashboards",
+        "dashboards with panels for: request rate (QPS), latency percentiles "
+        "(P50/P95/P99), error rate (%), availability (%), resource saturation "
+        "(CPU/memory), and dependency health",
+    ),
+    ARTIFACT_ALERTS: (
+        "PrometheusRule alerts",
+        "alerting rules derived from SLO targets: latency P99 alerts and error rate alerts",
+    ),
+    ARTIFACT_SLOS: (
+        "SLO definitions",
+        "Sloth PrometheusServiceLevel definitions with availability targets "
+        "and multi-window burn-rate alerting",
+    ),
+    ARTIFACT_NOTIFY: (
+        "notification policies",
+        "notification routing policies based on criticality: critical -> PagerDuty, "
+        "high -> Slack, medium -> email, low -> log only",
+    ),
+    ARTIFACT_LOKI_RULES: (
+        "Loki recording rules",
+        "Loki RecordingRules that derive Prometheus metrics from structured JSON logs: "
+        "error counts, latency, and request counts",
+    ),
+}
+
+# Requirements per artifact type (shared between batched and single-service prompts)
+_ARTIFACT_REQUIREMENTS = {
+    ARTIFACT_DASHBOARDS: [
+        "Set criticality, protocol (grpc/http), and SLO targets accurately",
+        "For HTTP services (frontend): set protocol to 'http'",
+        "Include all gRPC methods from the service context",
+        "Include dependencies as listed in the service context",
+        "Set owner from the service context",
+        "Include risks with priority and description",
+        "Set k8s.port from the service context",
+        "Use the correct log field names for the service's language",
+    ],
+    ARTIFACT_ALERTS: [
+        "Set SLO availability and latencyP99 targets accurately",
+        "Set criticality correctly (determines alert severity and 'for' duration)",
+        "Set protocol to 'http' for frontend, 'grpc' for others",
+        "Include all risks from the service context",
+        "Set alertChannels for alert routing",
+        "Set owner from the service context",
+    ],
+    ARTIFACT_SLOS: [
+        "Set slo.availability from the service's availability target",
+        "Set slo.latencyP99 from the service's latency target (with 'ms' suffix)",
+        "Set slo.errorBudget = 100 - availability (e.g., 99.95 -> 0.05)",
+        "Set owner from the service context",
+        "Set criticality correctly (affects alert severity)",
+        "Set protocol to 'http' for frontend, 'grpc' for others",
+    ],
+    ARTIFACT_NOTIFY: [
+        "Set alertChannels from the service's context",
+        "Set criticality correctly (determines routing)",
+        "Set owner from the service context",
+        "If alertChannels is empty, use defaults based on criticality:\n"
+        "   - critical: ['pagerduty-p1', 'slack-incidents']\n"
+        "   - high: ['slack-incidents']\n"
+        "   - medium: ['slack-notifications', 'email-oncall']\n"
+        "   - low: ['slack-notifications']",
+    ],
+    ARTIFACT_LOKI_RULES: [
+        "Set language correctly for this service",
+        "Set logFields with the correct field names for the language:\n"
+        "   - Go: level='level', message='msg', duration='duration_ms', durationUnit='ms'\n"
+        "   - Node.js: level='level', message='message', duration='responseTime', durationUnit='ms'\n"
+        "   - Python: level='levelname', message='message', duration='duration', durationUnit='ms'\n"
+        "   - Java: level='level', message='message', duration='elapsed_ms', durationUnit='ms'\n"
+        "   - C#: level='Level', message='Message', duration='ElapsedMilliseconds', durationUnit='ms'",
+        "Set criticality from the service context",
+    ],
+}
+
+
+def _build_requirements_section(artifact_key: str) -> str:
+    """Build requirements section from shared config."""
+    reqs = _ARTIFACT_REQUIREMENTS.get(artifact_key, [])
+    lines = [f"{i+1}. {req}" for i, req in enumerate(reqs)]
+    return "## Requirements\n\n" + "\n".join(lines) + "\n"
+
+
+def _build_params_prompt(
+    artifact_key: str,
+    header: str,
+    service_section: str,
+) -> str:
+    """Build a complete PARAMS prompt with shared structure."""
+    reqs = _build_requirements_section(artifact_key)
+    return (
+        f"{header}\n\n{service_section}\n\n"
+        f"{PARAMS_SCHEMA_TEMPLATE}\n{reqs}\n"
+    )
+
+
+# =============================================================================
 # PROMPT BUILDERS (one per artifact type)
 # =============================================================================
 
@@ -582,30 +706,16 @@ def build_dashboard_prompt(tier_name: str, ctxs: List[Dict]) -> str:
 
 def build_single_service_dashboard_prompt(ctx: Dict) -> str:
     """Build dashboard prompt for a single service."""
-    service_name = ctx["name"]
-    tier = ctx["criticality"]
+    desc = _ARTIFACT_DESCRIPTIONS[ARTIFACT_DASHBOARDS]
     header = (
-        f"Generate 1 Jsonnet parameter file for a Grafana dashboard "
-        f"for the {service_name} microservice ({tier} criticality).\n\n"
-        "These parameters will be compiled into a dashboard with panels for: "
-        "request rate (QPS), latency percentiles (P50/P95/P99), error rate (%), "
-        "availability (%), resource saturation (CPU/memory), and dependency health."
+        f"Generate 1 Jsonnet parameter file for a {desc[0]} "
+        f"for the {ctx['name']} microservice ({ctx['criticality']} criticality).\n\n"
+        f"These parameters will be compiled into {desc[1]}."
     )
-
-    reqs = (
-        "## Requirements\n\n"
-        "1. Set criticality, protocol (grpc/http), and SLO targets accurately\n"
-        "2. For HTTP services (frontend): set protocol to 'http'\n"
-        "3. Include all gRPC methods from the service context\n"
-        "4. Include dependencies as listed in the service context\n"
-        "5. Set owner from the service context\n"
-        "6. Include risks with priority and description\n"
-        "7. Set k8s.port from the service context\n"
-        "8. Use the correct log field names for the service's language\n"
-    )
-
+    service_section = f"## Service\n\n{_format_service_block(ctx, 1)}"
+    reqs = _build_requirements_section(ARTIFACT_DASHBOARDS)
     return (
-        f"{header}\n\n## Service\n\n{_format_service_block(ctx, 1)}\n\n"
+        f"{header}\n\n{service_section}\n\n"
         f"{PARAMS_SCHEMA_TEMPLATE}\n{reqs}\n"
         f"{_params_output_format_section(1, [ctx])}"
     )
@@ -639,27 +749,16 @@ def build_alerts_prompt(tier_name: str, ctxs: List[Dict]) -> str:
 
 def build_single_service_alerts_prompt(ctx: Dict) -> str:
     """Build alerts prompt for a single service."""
-    service_name = ctx["name"]
-    tier = ctx["criticality"]
+    desc = _ARTIFACT_DESCRIPTIONS[ARTIFACT_ALERTS]
     header = (
-        f"Generate 1 Jsonnet parameter file for PrometheusRule alerts "
-        f"for the {service_name} microservice ({tier} criticality).\n\n"
-        "These parameters will be compiled into alerting rules derived from "
-        "SLO targets: latency P99 alerts and error rate alerts."
+        f"Generate 1 Jsonnet parameter file for {desc[0]} "
+        f"for the {ctx['name']} microservice ({ctx['criticality']} criticality).\n\n"
+        f"These parameters will be compiled into {desc[1]}."
     )
-
-    reqs = (
-        "## Requirements\n\n"
-        "1. Set SLO availability and latencyP99 targets accurately\n"
-        "2. Set criticality correctly (determines alert severity and 'for' duration)\n"
-        "3. Set protocol to 'http' for frontend, 'grpc' for others\n"
-        "4. Include all risks from the service context\n"
-        "5. Set alertChannels for alert routing\n"
-        "6. Set owner from the service context\n"
-    )
-
+    service_section = f"## Service\n\n{_format_service_block(ctx, 1)}"
+    reqs = _build_requirements_section(ARTIFACT_ALERTS)
     return (
-        f"{header}\n\n## Service\n\n{_format_service_block(ctx, 1)}\n\n"
+        f"{header}\n\n{service_section}\n\n"
         f"{PARAMS_SCHEMA_TEMPLATE}\n{reqs}\n"
         f"{_params_output_format_section(1, [ctx])}"
     )
@@ -693,27 +792,16 @@ def build_slo_prompt(tier_name: str, ctxs: List[Dict]) -> str:
 
 def build_single_service_slo_prompt(ctx: Dict) -> str:
     """Build SLO prompt for a single service."""
-    service_name = ctx["name"]
-    tier = ctx["criticality"]
+    desc = _ARTIFACT_DESCRIPTIONS[ARTIFACT_SLOS]
     header = (
-        f"Generate 1 Jsonnet parameter file for SLO definitions "
-        f"for the {service_name} microservice ({tier} criticality).\n\n"
-        "These parameters will be compiled into Sloth PrometheusServiceLevel "
-        "definitions with availability targets and multi-window burn-rate alerting."
+        f"Generate 1 Jsonnet parameter file for {desc[0]} "
+        f"for the {ctx['name']} microservice ({ctx['criticality']} criticality).\n\n"
+        f"These parameters will be compiled into {desc[1]}."
     )
-
-    reqs = (
-        "## Requirements\n\n"
-        "1. Set slo.availability from the service's availability target\n"
-        "2. Set slo.latencyP99 from the service's latency target (with 'ms' suffix)\n"
-        "3. Set slo.errorBudget = 100 - availability (e.g., 99.95 -> 0.05)\n"
-        "4. Set owner from the service context\n"
-        "5. Set criticality correctly (affects alert severity)\n"
-        "6. Set protocol to 'http' for frontend, 'grpc' for others\n"
-    )
-
+    service_section = f"## Service\n\n{_format_service_block(ctx, 1)}"
+    reqs = _build_requirements_section(ARTIFACT_SLOS)
     return (
-        f"{header}\n\n## Service\n\n{_format_service_block(ctx, 1)}\n\n"
+        f"{header}\n\n{service_section}\n\n"
         f"{PARAMS_SCHEMA_TEMPLATE}\n{reqs}\n"
         f"{_params_output_format_section(1, [ctx])}"
     )
@@ -750,30 +838,16 @@ def build_notification_prompt(tier_name: str, ctxs: List[Dict]) -> str:
 
 def build_single_service_notification_prompt(ctx: Dict) -> str:
     """Build notification prompt for a single service."""
-    service_name = ctx["name"]
-    tier = ctx["criticality"]
+    desc = _ARTIFACT_DESCRIPTIONS[ARTIFACT_NOTIFY]
     header = (
-        f"Generate 1 Jsonnet parameter file for notification policies "
-        f"for the {service_name} microservice ({tier} criticality).\n\n"
-        "These parameters will be compiled into notification routing policies "
-        "based on criticality: critical -> PagerDuty, high -> Slack, "
-        "medium -> email, low -> log only."
+        f"Generate 1 Jsonnet parameter file for {desc[0]} "
+        f"for the {ctx['name']} microservice ({ctx['criticality']} criticality).\n\n"
+        f"These parameters will be compiled into {desc[1]}."
     )
-
-    reqs = (
-        "## Requirements\n\n"
-        "1. Set alertChannels from the service's context\n"
-        "2. Set criticality correctly (determines routing)\n"
-        "3. Set owner from the service context\n"
-        "4. If alertChannels is empty, use defaults based on criticality:\n"
-        "   - critical: ['pagerduty-p1', 'slack-incidents']\n"
-        "   - high: ['slack-incidents']\n"
-        "   - medium: ['slack-notifications', 'email-oncall']\n"
-        "   - low: ['slack-notifications']\n"
-    )
-
+    service_section = f"## Service\n\n{_format_service_block(ctx, 1)}"
+    reqs = _build_requirements_section(ARTIFACT_NOTIFY)
     return (
-        f"{header}\n\n## Service\n\n{_format_service_block(ctx, 1)}\n\n"
+        f"{header}\n\n{service_section}\n\n"
         f"{PARAMS_SCHEMA_TEMPLATE}\n{reqs}\n"
         f"{_params_output_format_section(1, [ctx])}"
     )
@@ -810,30 +884,17 @@ def build_loki_rules_prompt(tier_name: str, ctxs: List[Dict]) -> str:
 
 def build_single_service_loki_rules_prompt(ctx: Dict) -> str:
     """Build Loki rules prompt for a single service."""
-    service_name = ctx["name"]
-    language = ctx["language"]
+    desc = _ARTIFACT_DESCRIPTIONS[ARTIFACT_LOKI_RULES]
+    # Loki rules use language instead of criticality in header
     header = (
-        f"Generate 1 Jsonnet parameter file for Loki recording rules "
-        f"for the {service_name} microservice ({language}).\n\n"
-        "These parameters will be compiled into Loki RecordingRules that "
-        "derive Prometheus metrics from structured JSON logs: "
-        "error counts, latency, and request counts."
+        f"Generate 1 Jsonnet parameter file for {desc[0]} "
+        f"for the {ctx['name']} microservice ({ctx['language']}).\n\n"
+        f"These parameters will be compiled into {desc[1]}."
     )
-
-    reqs = (
-        "## Requirements\n\n"
-        "1. Set language correctly for this service\n"
-        "2. Set logFields with the correct field names for the language:\n"
-        "   - Go: level='level', message='msg', duration='duration_ms', durationUnit='ms'\n"
-        "   - Node.js: level='level', message='message', duration='responseTime', durationUnit='ms'\n"
-        "   - Python: level='levelname', message='message', duration='duration', durationUnit='ms'\n"
-        "   - Java: level='level', message='message', duration='elapsed_ms', durationUnit='ms'\n"
-        "   - C#: level='Level', message='Message', duration='ElapsedMilliseconds', durationUnit='ms'\n"
-        "3. Set criticality from the service context\n"
-    )
-
+    service_section = f"## Service\n\n{_format_service_block(ctx, 1)}"
+    reqs = _build_requirements_section(ARTIFACT_LOKI_RULES)
     return (
-        f"{header}\n\n## Service\n\n{_format_service_block(ctx, 1)}\n\n"
+        f"{header}\n\n{service_section}\n\n"
         f"{PARAMS_SCHEMA_TEMPLATE}\n{reqs}\n"
         f"{_params_output_format_section(1, [ctx])}"
     )
@@ -1202,13 +1263,6 @@ def _generate_decomposed_tasks(
     tasks: List[Dict[str, Any]] = []
     all_artifact_ids: List[str] = []
 
-    # Standard artifacts (all services except loadgenerator)
-    standard_artifacts = [
-        "DASHBOARDS", "ALERTS", "SLOS", "NOTIFY", "LOKI-RULES", "RUNBOOKS"
-    ]
-    # Loadgenerator only gets dashboard and runbook
-    loadgen_artifacts = ["DASHBOARD", "RUNBOOK"]
-
     # Track dashboard task IDs per tier for phase gating.
     # All critical services must complete their dashboards before high starts, etc.
     tier_dashboard_ids: Dict[str, List[str]] = {
@@ -1230,9 +1284,9 @@ def _generate_decomposed_tasks(
 
             # Choose artifact list based on service
             if service_name == "loadgenerator":
-                artifacts = loadgen_artifacts
+                artifacts = LOADGEN_ARTIFACTS
             else:
-                artifacts = standard_artifacts
+                artifacts = STANDARD_ARTIFACTS
 
             for artifact_key in artifacts:
                 # Task ID: OB-{SERVICE}-{ARTIFACT}
@@ -1274,7 +1328,7 @@ def _generate_decomposed_tasks(
                 all_artifact_ids.append(task_id)
 
                 # Track dashboard task IDs for tier gating
-                if artifact_key in ("DASHBOARDS", "DASHBOARD"):
+                if artifact_key in (ARTIFACT_DASHBOARDS, ARTIFACT_DASHBOARD):
                     tier_dashboard_ids[tier].append(task_id)
 
     return tasks, all_artifact_ids
@@ -1284,11 +1338,16 @@ def generate_observability_tasks() -> List[Dict[str, Any]]:
     """Build the full observability task list with dependency graph.
 
     When DECOMPOSE_TO_SINGLE_SERVICE=True (default), generates 1 task per
-    service per artifact type (~66 tasks for 11 services × 6 artifact types).
-    This avoids truncation issues with GPT-4o-mini.
+    service per artifact type. This avoids truncation issues with GPT-4o-mini
+    by keeping each task's output small (~36 lines per service).
 
     When DECOMPOSE_TO_SINGLE_SERVICE=False, batches services by tier
-    (original behavior, ~24 tasks total).
+    (original behavior, fewer but larger tasks).
+
+    Task count formula (decomposed mode):
+        (num_standard_services × num_standard_artifacts) +
+        (num_loadgen_services × num_loadgen_artifacts) +
+        num_utility_tasks
 
     Tier phases run sequentially (cost control); tasks within a tier
     run in parallel.
