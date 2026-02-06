@@ -711,20 +711,53 @@ def run_demo(
 
     # Build service-names lookup per task for single-service fallback.
     # Maps task ID -> list of service names expected in that task's output.
-    _TIER_SERVICE_MAP = {
-        "CRIT": ["frontend", "checkoutservice", "cartservice", "paymentservice"],
-        "HIGH": ["productcatalogservice", "currencyservice", "shippingservice"],
-        "MED": ["emailservice", "recommendationservice", "adservice"],
-        "LOW": ["loadgenerator"],
-    }
+    #
+    # Supports two task ID formats:
+    # 1. Batched (legacy): OB-{TIER_PREFIX}-{ARTIFACT} -> multiple services
+    #    e.g., OB-CRIT-DASHBOARDS -> [frontend, checkoutservice, ...]
+    # 2. Decomposed: OB-{SERVICE}-{ARTIFACT} -> single service
+    #    e.g., OB-FRONTEND-DASHBOARDS -> [frontend]
+    #
+    # Import service list from setup_demo_tasks to avoid duplication (DRY).
+    try:
+        from setup_demo_tasks import SERVICE_INFO, TIER_MAP
+        _ALL_SERVICE_NAMES = {name.upper(): name for name in SERVICE_INFO}
+        _TIER_SERVICE_MAP = {
+            "CRIT": TIER_MAP.get("critical", []),
+            "HIGH": TIER_MAP.get("high", []),
+            "MED": TIER_MAP.get("medium", []),
+            "LOW": TIER_MAP.get("low", []),
+        }
+    except ImportError:
+        # Fallback if import fails (e.g., running from different directory)
+        _TIER_SERVICE_MAP = {
+            "CRIT": ["frontend", "checkoutservice", "cartservice", "paymentservice"],
+            "HIGH": ["productcatalogservice", "currencyservice", "shippingservice"],
+            "MED": ["emailservice", "recommendationservice", "adservice"],
+            "LOW": ["loadgenerator"],
+        }
+        # Derive service names from tier map
+        _ALL_SERVICE_NAMES = {
+            name.upper(): name
+            for services in _TIER_SERVICE_MAP.values()
+            for name in services
+        }
+
     _task_service_names: Dict[str, List[str]] = {}
     for t in tasks:
         tid = t.task_id
         parts = tid.split("-", 2)
         if len(parts) >= 2 and parts[0] == "OB":
             prefix = parts[1]
+            # Check for batched (tier) format first
             if prefix in _TIER_SERVICE_MAP:
                 _task_service_names[tid] = _TIER_SERVICE_MAP[prefix]
+            # Check for decomposed (service name) format
+            elif prefix in _ALL_SERVICE_NAMES:
+                _task_service_names[tid] = [_ALL_SERVICE_NAMES[prefix]]
+            # Also check task config for service_name (set by decomposed generator)
+            elif t.config.get("service_name"):
+                _task_service_names[tid] = [t.config["service_name"]]
 
     # Progress callback with artifact extraction
     # IMPORTANT: The runner does NOT wrap this in try/except -- any unhandled
