@@ -31,8 +31,57 @@ import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, TypedDict
 import uuid
+
+
+# =============================================================================
+# TYPE DEFINITIONS
+# =============================================================================
+
+class SLOConfig(TypedDict, total=False):
+    """SLO configuration for a service."""
+    availability: str
+    latency_p99: str
+    error_budget: str
+    throughput: str
+
+
+class K8sConfig(TypedDict, total=False):
+    """Kubernetes configuration for a service."""
+    port: Optional[int]
+    resources: Dict[str, Any]
+    probe_type: Optional[str]
+
+
+class RiskConfig(TypedDict):
+    """Risk definition for a service."""
+    priority: str
+    description: str
+
+
+class ServiceContext(TypedDict, total=False):
+    """Unified service context combining all data sources.
+
+    This is the structure passed to prompt builders and used throughout
+    task generation. It combines data from:
+    - SERVICE_INFO (language, description, dependencies)
+    - ProjectContext CRDs (criticality, SLOs, risks, alert channels)
+    - K8s manifests (ports, resources, probes)
+    - Proto definitions (gRPC methods)
+    """
+    name: str
+    language: str
+    description: str
+    criticality: str  # critical, high, medium, low
+    business_value: str
+    dependencies: List[str]
+    grpc_methods: List[str]
+    slo: SLOConfig
+    risks: List[RiskConfig]
+    alert_channels: List[str]
+    owner: str
+    k8s: K8sConfig
 
 try:
     import yaml
@@ -145,7 +194,10 @@ SERVICE_TO_TIER = {
 
 # Task decomposition setting: True = 1 service per task (reliable), False = batch by tier
 # Setting to True fixes truncation issues with GPT-4o-mini when batching 3+ services
-DECOMPOSE_TO_SINGLE_SERVICE = True
+# Can be overridden via environment variable: DEMO_DECOMPOSE_TASKS=false
+DECOMPOSE_TO_SINGLE_SERVICE = os.environ.get(
+    "DEMO_DECOMPOSE_TASKS", "true"
+).lower() in ("true", "1", "yes")
 
 # =============================================================================
 # ARTIFACT KEY CONSTANTS
@@ -1377,10 +1429,17 @@ def generate_observability_tasks() -> List[Dict[str, Any]]:
     # Phases 1-4: Artifact generation (batched or decomposed)
     if DECOMPOSE_TO_SINGLE_SERVICE:
         artifact_tasks, all_artifact_ids = _generate_decomposed_tasks(contexts)
+        mode_info = f"decomposed mode: {len(artifact_tasks)} tasks (1 per service per artifact)"
     else:
         artifact_tasks, all_artifact_ids = _generate_batched_tasks(
             contexts, tiers
         )
+        mode_info = f"batched mode: {len(artifact_tasks)} tasks (grouped by tier)"
+
+    # Log mode selection (visible in --list output)
+    if os.environ.get("DEMO_VERBOSE", "").lower() in ("true", "1", "yes"):
+        print(f"[DEBUG] Task generation: {mode_info}")
+
     tasks.extend(artifact_tasks)
 
     # Phase 5: Load artifacts
